@@ -417,7 +417,7 @@ function clearGoogleStateCookie(res: import("express").Response) {
   res.clearCookie(GOOGLE_STATE_COOKIE, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "none",
     path: "/api/v1/auth/google",
   });
 }
