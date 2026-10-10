@@ -25,7 +25,12 @@ const pinoHttp = require("pino-http") as typeof import("pino-http").default;
 
 const config = z
   .object({
-    API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+    API_PORT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(65535)
+      .default(Number(process.env.PORT ?? 4000)),
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),

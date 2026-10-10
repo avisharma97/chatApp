@@ -759,7 +759,7 @@ export default function Home() {
             className="google-button"
             type="button"
             onClick={() => {
-              window.location.href = "http://localhost:4000/api/v1/auth/google";
+              window.location.href = `${API}/api/v1/auth/google`;
             }}
           >
             Continue with Google
