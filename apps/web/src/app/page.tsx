@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-
+import Link from "next/link";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 type User = {
@@ -739,6 +739,16 @@ export default function Home() {
                 }
               />
             </label>
+            {authMode === "login" && (
+              <div className="text-right">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-blue-400 hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            )}
 
             {error && <p className="feedback error">{error}</p>}
             {notice && <p className="feedback success">{notice}</p>}
@@ -751,6 +761,26 @@ export default function Home() {
                   : "Create account →"}
             </button>
           </form>
+
+          <p className="mt-5 text-center text-sm text-gray-400">
+            {authMode === "login"
+              ? "Don't have an account? "
+              : "Already have an account? "}
+
+            <button
+              type="button"
+              className="font-medium text-blue-400 hover:underline"
+              onClick={() => {
+                setAuthMode(authMode === "login" ? "register" : "login");
+                setError("");
+                setNotice("");
+                setPassword("");
+              }}
+            >
+              {authMode === "login" ? "Sign up" : "Log in"}
+            </button>
+          </p>
+
           <div className="auth-divider">
             <span>OR</span>
           </div>

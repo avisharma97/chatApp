@@ -76,3 +76,8 @@ export type MessageReceipt = Prisma.MessageReceiptModel
  * 
  */
 export type UserIdentity = Prisma.UserIdentityModel
+/**
+ * Model PasswordResetToken
+ * 
+ */
+export type PasswordResetToken = Prisma.PasswordResetTokenModel
