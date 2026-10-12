@@ -1,61 +1,31 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from "react";
 import { io, Socket } from "socket.io-client";
 import Link from "next/link";
+import { useAppDispatch, useAppSelector } from "../lib/hooks";
+import { useConversationMessages } from "@/features/chat/useConversationMessages";
+import {
+  addMessage,
+  setMessages,
+  setConversations,
+  updateMessageReceipt,
+  upsertConversation,
+  setMessagesLoading,
+  setMessagesError,
+} from "../features/chat/chatSlice";
+import MessageComposer from "../features/chat/MessageComposer";
+import MessageList from "../features/chat/MessageList";
+import type { User, SearchUser, Message, Conversation } from "../types/chat";
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
-type User = {
-  id: string;
-  email: string;
-  username: string;
-  displayName: string;
-  avatarUrl?: string | null;
-};
-
-type SearchUser = {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl?: string | null;
-};
-
-type Member = {
-  conversationId?: string;
-  userId: string;
-  role?: string;
-  joinedAt?: string;
-  lastReadAt?: string | null;
-  user: User | SearchUser;
-};
-
-type Message = {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  clientMessageId?: string | null;
-  content: string;
-  createdAt: string;
-  editedAt?: string | null;
-  deletedAt?: string | null;
-  receipts?: {
-    userId: string;
-    deliveredAt: string | null;
-    readAt: string | null;
-  }[];
-};
-
-type Conversation = {
-  id: string;
-  type: "DIRECT" | "GROUP";
-  title?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
-  members: Member[];
-  latestMessage?: Message | null;
-  messages?: Message[];
-  unreadCount?: number;
-};
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API}${path}`, {
@@ -118,20 +88,35 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
-
-  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const {
+    loadMessages,
+    loadOlderMessages,
+    cancelMessages,
+    hasMore,
+    loadingOlder,
+  } = useConversationMessages();
+  const dispatch = useAppDispatch();
+  const messages = useAppSelector((state) => state.chat.messages);
+  const conversations = useAppSelector((state) => state.chat.conversations);
   const [draft, setDraft] = useState("");
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  const loadingMessages = useAppSelector((state) => state.chat.messagesLoading);
+  const messagesError = useAppSelector((state) => state.chat.messagesError);
   const [sending, setSending] = useState(false);
   const [socketStatus, setSocketStatus] = useState("Connecting");
-
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const [forwardConversationId, setForwardConversationId] = useState("");
+  const [forwarding, setForwarding] = useState(false);
+  const [forwardError, setForwardError] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
-
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
+  const [forwardSuccess, setForwardSuccess] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const selectedIdRef = useRef(selectedId);
   const previousSelectedIdRef = useRef("");
@@ -142,6 +127,59 @@ export default function Home() {
   const conversationsRef = useRef(conversations);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const forwardTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const forwardDialogRef = useRef<HTMLElement | null>(null);
+  const forwardSelectRef = useRef<HTMLSelectElement | null>(null);
+  const messagesAreaRef = useRef<HTMLDivElement>(null);
+  const draggedMessageRef = useRef<Message | null>(null);
+  const [dragOverConversationId, setDragOverConversationId] = useState<
+    string | null
+  >(null);
+  const pendingScrollRestoreRef = useRef<{
+    messageId: string;
+    top: number;
+    messageCount: number;
+  } | null>(null);
+
+  const draftStorageKey =
+    user && selectedId ? `chatapp:draft:${user.id}:${selectedId}` : null;
+
+  useLayoutEffect(() => {
+    const snapshot = pendingScrollRestoreRef.current;
+    const container = messagesAreaRef.current;
+
+    if (!snapshot || !container) return;
+
+    if (messages.length <= snapshot.messageCount) return;
+
+    const rows = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-message-id]"),
+    );
+
+    const anchor = rows.find(
+      (row) => row.dataset.messageId === snapshot.messageId,
+    );
+
+    if (anchor) {
+      const currentTop = anchor.getBoundingClientRect().top;
+      container.scrollTop += currentTop - snapshot.top;
+    }
+
+    pendingScrollRestoreRef.current = null;
+  }, [messages]);
+
+  useEffect(() => {
+    if (!draftStorageKey) {
+      setDraft("");
+      return;
+    }
+
+    try {
+      setDraft(localStorage.getItem(draftStorageKey) ?? "");
+    } catch {
+      setDraft("");
+    }
+  }, [draftStorageKey]);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -149,6 +187,7 @@ export default function Home() {
 
   // Keep the current selection available to Socket.IO callbacks.
   selectedIdRef.current = selectedId;
+  const activeConversationIdRef = useRef<string | null>(null);
 
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === selectedId,
@@ -167,23 +206,51 @@ export default function Home() {
       "/api/v1/conversations",
     );
     const list = Array.isArray(data) ? data : (data.conversations ?? []);
-    setConversations(list);
+    dispatch(setConversations(list));
     return list;
-  }, []);
+  }, [dispatch]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
-    setLoadingMessages(true);
-    try {
-      const data = await api<{ messages: Message[] }>(
-        `/api/v1/conversations/${conversationId}/messages?limit=50`,
-      );
-      setMessages(data.messages ?? []);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setLoadingMessages(false);
-    }
-  }, []);
+  useEffect(() => {
+    if (authLoading || !user) return;
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const list = await refreshConversations();
+
+        if (!active || list.length === 0) return;
+
+        const storageKey = `chatapp:last-conversation:${user.id}`;
+
+        let savedId: string | null = null;
+
+        try {
+          savedId = localStorage.getItem(storageKey);
+        } catch {
+          // Storage may be unavailable.
+        }
+
+        const conversationId =
+          list.find((conversation) => conversation.id === savedId)?.id ??
+          list[0].id;
+        console.log("RESTORE DEBUG", {
+          savedId,
+          selectedConversationId: conversationId,
+          conversations: list.map((conversation) => conversation.id),
+        });
+        setSelectedId(conversationId);
+      } catch (error) {
+        if (active) {
+          console.error("Failed to restore conversations:", error);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [authLoading, user?.id, refreshConversations, dispatch]);
 
   // Restore an existing login session when the page opens.
   useEffect(() => {
@@ -207,44 +274,120 @@ export default function Home() {
 
   // Load conversations after authentication changes.
   useEffect(() => {
-    if (!user) {
-      setConversations([]);
-      setSelectedId("");
-      setMessages([]);
+    activeConversationIdRef.current = selectedId ?? null;
+
+    if (!selectedId || !user) {
+      cancelMessages();
+      dispatch(setMessages([]));
+      dispatch(setMessagesLoading(false));
+      dispatch(setMessagesError(null));
       return;
     }
 
-    let active = true;
-    refreshConversations()
-      .then((list) => {
-        if (!active) return;
-        if (list.length > 0) {
-          setSelectedId((current) =>
-            list.some((conversation) => conversation.id === current)
-              ? current
-              : list[0].id,
-          );
-        } else {
-          setSelectedId("");
-        }
-      })
-      .catch((err) => {
-        if (active) setError(errorText(err));
-      });
+    const controller = new AbortController();
+
+    void loadMessages(selectedId);
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, [user, refreshConversations]);
+  }, [selectedId, user, loadMessages, dispatch]);
 
-  // Load message history when the selected conversation changes.
   useEffect(() => {
-    if (!selectedId || !user) {
-      setMessages([]);
+    if (!user || !selectedId) return;
+
+    try {
+      localStorage.setItem(`chatapp:last-conversation:${user.id}`, selectedId);
+    } catch {
+      // Continue without persistence if storage is unavailable.
+    }
+  }, [user?.id, selectedId]);
+
+  const uploadMedia = (file?: File) => {
+    if (!file || !selectedConversation?.id || mediaUploading) return;
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError("Please select a supported image or video.");
       return;
     }
-    void loadMessages(selectedId);
-  }, [selectedId, user, loadMessages]);
+
+    if (file.size > 25 * 1024 * 1024) {
+      setUploadError("File size must be 25 MB or less.");
+      return;
+    }
+
+    setMediaUploading(true);
+    setUploadProgress(0);
+    setUploadError("");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("clientMessageId", crypto.randomUUID());
+    formData.append("caption", draft.trim());
+
+    const xhr = new XMLHttpRequest();
+    xhr.open(
+      "POST",
+      `${API}/api/v1/conversations/${selectedConversation.id}/media`,
+    );
+    xhr.withCredentials = true;
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+
+        if (xhr.status < 200 || xhr.status >= 300) {
+          setUploadError(data.error ?? "Upload failed. Please try again.");
+          return;
+        }
+
+        if (data.message) {
+          dispatch(addMessage(data.message));
+          handleDraftChange("");
+        } else {
+          setUploadError("Upload succeeded, but no message was returned.");
+        }
+      } catch {
+        setUploadError("Invalid server response. Please retry.");
+      } finally {
+        setMediaUploading(false);
+        setUploadProgress(0);
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadError("Network error during upload. Please retry.");
+      setMediaUploading(false);
+      setUploadProgress(0);
+    };
+
+    xhr.onabort = () => {
+      setMediaUploading(false);
+      setUploadProgress(0);
+    };
+
+    xhr.send(formData);
+  };
 
   // One authenticated Socket.IO connection per logged-in user.
   useEffect(() => {
@@ -270,6 +413,10 @@ export default function Home() {
           { conversationId },
           (result: { ok: boolean }) => {
             if (result.ok) {
+              if (selectedIdRef.current === conversationId) {
+                void loadMessages(conversationId);
+              }
+
               socket.emit("conversation:read", {
                 conversationId,
               });
@@ -288,17 +435,19 @@ export default function Home() {
       const activeConversationId = selectedIdRef.current;
 
       if (message.conversationId === activeConversationId) {
-        setMessages((current) =>
-          current.some((item) => item.id === message.id)
-            ? current
-            : [...current, message],
-        );
+        dispatch(addMessage(message));
 
         // Recipient acknowledges delivery and reading.
         if (message.senderId !== user.id) {
           socket.emit("message:delivered", {
             messageId: message.id,
           });
+
+          if (document.visibilityState === "visible") {
+            socket.emit("conversation:read", {
+              conversationId: message.conversationId,
+            });
+          }
         }
       }
 
@@ -313,43 +462,12 @@ export default function Home() {
         deliveredAt: string | null;
         readAt: string | null;
       }) => {
-        setMessages((current) =>
-          current.map((message) => {
-            if (message.id !== receipt.messageId) {
-              return message;
-            }
-
-            const receipts = message.receipts ?? [];
-            const existing = receipts.find(
-              (item) => item.userId === receipt.userId,
-            );
-
-            if (!existing) {
-              return {
-                ...message,
-                receipts: [
-                  ...receipts,
-                  {
-                    userId: receipt.userId,
-                    deliveredAt: receipt.deliveredAt,
-                    readAt: receipt.readAt,
-                  },
-                ],
-              };
-            }
-
-            return {
-              ...message,
-              receipts: receipts.map((item) =>
-                item.userId === receipt.userId
-                  ? {
-                      ...item,
-                      deliveredAt: receipt.deliveredAt ?? item.deliveredAt,
-                      readAt: receipt.readAt ?? item.readAt,
-                    }
-                  : item,
-              ),
-            };
+        dispatch(
+          updateMessageReceipt({
+            messageId: receipt.messageId,
+            userId: receipt.userId,
+            deliveredAt: receipt.deliveredAt ?? null,
+            readAt: receipt.readAt ?? null,
           }),
         );
       },
@@ -372,7 +490,7 @@ export default function Home() {
           (item) => item.user.id === event.userId,
         );
 
-        const username =
+        const username: string =
           member?.user.displayName || member?.user.username || "Someone";
 
         setTypingUsers((current) => {
@@ -412,23 +530,83 @@ export default function Home() {
   }, [user, refreshConversations]);
 
   // Join/leave rooms when the selected conversation changes.
+  // Join/leave rooms and mark messages as read.
   useEffect(() => {
+    setTypingUsers([]);
+
     const socket = socketRef.current;
+
     if (!socket?.connected) return;
 
     const previousId = previousSelectedIdRef.current;
+
     if (previousId && previousId !== selectedId) {
-      socket.emit("conversation:leave", { conversationId: previousId });
+      socket.emit("conversation:leave", {
+        conversationId: previousId,
+      });
     }
+
     if (selectedId && selectedId !== previousId) {
-      socket.emit("conversation:join", { conversationId: selectedId });
+      socket.emit(
+        "conversation:join",
+        { conversationId: selectedId },
+        (result: { ok: boolean }) => {
+          if (result.ok && selectedIdRef.current === selectedId) {
+            socket.emit("conversation:read", {
+              conversationId: selectedId,
+            });
+          }
+        },
+      );
     }
+
     previousSelectedIdRef.current = selectedId;
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+    };
   }, [selectedId, user]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!forwardMessage) return;
+
+    const previousFocus = document.activeElement;
+
+    requestAnimationFrame(() => {
+      forwardSelectRef.current?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !forwarding) {
+        event.preventDefault();
+        setForwardMessage(null);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+
+      requestAnimationFrame(() => {
+        if (forwardTriggerRef.current?.isConnected) {
+          forwardTriggerRef.current.focus();
+        } else if (
+          previousFocus instanceof HTMLElement &&
+          previousFocus.isConnected
+        ) {
+          previousFocus.focus();
+        }
+      });
+    };
+  }, [forwardMessage, forwarding]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -538,12 +716,7 @@ export default function Home() {
       );
 
       const list = await refreshConversations();
-      if (!list.some((item) => item.id === data.conversation.id)) {
-        setConversations((current) => [
-          data.conversation,
-          ...current.filter((item) => item.id !== data.conversation.id),
-        ]);
-      }
+      dispatch(upsertConversation(data.conversation));
 
       setSelectedId(data.conversation.id);
       setShowNewChat(false);
@@ -558,7 +731,19 @@ export default function Home() {
   }
   function handleDraftChange(value: string) {
     setDraft(value);
+    if (user && selectedId) {
+      try {
+        const key = `chatapp:draft:${user.id}:${selectedId}`;
 
+        if (value.length > 0) {
+          localStorage.setItem(key, value);
+        } else {
+          localStorage.removeItem(key);
+        }
+      } catch {
+        // Draft persistence is best-effort.
+      }
+    }
     const conversationId = selectedIdRef.current;
     const socket = socketRef.current;
 
@@ -602,11 +787,7 @@ export default function Home() {
           body: JSON.stringify({ clientMessageId, content }),
         },
       );
-      setMessages((current) =>
-        current.some((item) => item.id === data.message.id)
-          ? current
-          : [...current, data.message],
-      );
+      dispatch(addMessage(data.message));
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
@@ -615,6 +796,13 @@ export default function Home() {
       socketRef.current?.emit("typing:stop", {
         conversationId: selectedId,
       });
+      if (user && selectedId) {
+        try {
+          localStorage.removeItem(`chatapp:draft:${user.id}:${selectedId}`);
+        } catch {
+          // Sending the message must not depend on localStorage.
+        }
+      }
       setDraft("");
       void refreshConversations().catch(() => undefined);
     } catch (err) {
@@ -623,6 +811,65 @@ export default function Home() {
       setSending(false);
     }
   }
+  const handleForwardMessage = async (
+    messageToForward: Message | null = forwardMessage,
+    destinationId: string = forwardConversationId,
+    closeDialog = true,
+  ) => {
+    if (!messageToForward || !destinationId || forwarding) return;
+    if (messageToForward.conversationId === destinationId) return;
+    setForwardSuccess("");
+    setForwarding(true);
+    setForwardError("");
+
+    try {
+      const data = await api<{ message: Message; duplicate?: boolean }>(
+        `/api/v1/conversations/${messageToForward.conversationId}/messages/${messageToForward.id}/forward`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            destinationConversationId: destinationId,
+            clientMessageId: crypto.randomUUID(),
+          }),
+        },
+      );
+      if (destinationId === selectedId) {
+        dispatch(addMessage(data.message));
+      }
+
+      await refreshConversations();
+      setForwardSuccess("Message forwarded successfully.");
+      setError("");
+
+      // Open the destination conversation after forwarding.
+      setSelectedId(destinationId);
+
+      if (closeDialog) {
+        setForwardMessage(null);
+        setForwardConversationId("");
+        setForwardError("");
+      }
+
+      setError("");
+    } catch (error) {
+      setForwardSuccess("");
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Forward failed. Please retry.";
+
+      if (closeDialog) {
+        setForwardError(message);
+      } else {
+        setError(message);
+      }
+    } finally {
+      setForwarding(false);
+      draggedMessageRef.current = null;
+      setDragOverConversationId(null);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -803,7 +1050,9 @@ export default function Home() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell ${selectedId ? "has-selected-chat" : "show-conversations"}`}
+    >
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-mark">c</div>
@@ -811,60 +1060,42 @@ export default function Home() {
           <span className="brand-dot" />
         </div>
 
-        <div className="sidebar-heading">
-          <div>
-            <p className="eyebrow">YOUR SPACE</p>
-            <h2>Messages</h2>
-          </div>
-          <button
-            type="button"
-            className="icon-button"
-            title="Start a conversation"
-            aria-label="Start a conversation"
-            onClick={() => {
-              setShowNewChat((current) => !current);
-              setUserSearch("");
-              setSearchResults([]);
-              setError("");
-            }}
-          >
-            +
-          </button>
-        </div>
+        <div className="sidebar-heading"></div>
 
-        {showNewChat && (
-          <div className="new-chat-panel">
-            <label htmlFor="userSearch">Start a new conversation</label>
+        <div className="new-chat-panel">
+          <div className="user-search-box">
+            <span aria-hidden="true">⌕</span>
             <input
               id="userSearch"
               type="search"
               value={userSearch}
               onChange={(event) => void searchUsers(event.target.value)}
-              placeholder="Search username or name..."
+              placeholder="Search people..."
               aria-label="Search users"
             />
-
-            {searchingUsers && <p>Searching users...</p>}
-            {!searchingUsers &&
-              userSearch.trim().length >= 2 &&
-              searchResults.length === 0 && <p>No users found.</p>}
-            {userSearch.trim().length < 2 && (
-              <p>Type at least 2 characters to search.</p>
+            {searchingUsers && (
+              <span className="search-spinner" aria-label="Searching">
+                …
+              </span>
             )}
-
-            {searchResults.map((result) => (
-              <button
-                type="button"
-                key={result.id}
-                disabled={busy}
-                onClick={() => void startConversation(result.id)}
-              >
-                <strong>{result.displayName}</strong>
-                <span>@{result.username}</span>
-              </button>
-            ))}
           </div>
-        )}
+
+          {userSearch.trim().length >= 2 &&
+            !searchingUsers &&
+            searchResults.length === 0 && <p>No users found.</p>}
+
+          {searchResults.map((result) => (
+            <button
+              type="button"
+              key={result.id}
+              disabled={busy}
+              onClick={() => void startConversation(result.id)}
+            >
+              <strong>{result.displayName}</strong>
+              <span>@{result.username}</span>
+            </button>
+          ))}
+        </div>
 
         <div className="conversation-list">
           {conversations.map((conversation) => {
@@ -876,8 +1107,57 @@ export default function Home() {
               <button
                 type="button"
                 key={conversation.id}
-                className={`conversation-item ${active ? "selected" : ""}`}
-                onClick={() => setSelectedId(conversation.id)}
+                className={`conversation-item ${active ? "selected" : ""} ${
+                  dragOverConversationId === conversation.id
+                    ? "drop-target"
+                    : ""
+                }`}
+                onClick={() => {
+                  if (draggedMessageRef.current) return;
+                  setSelectedId(conversation.id);
+                }}
+                onDragOver={(event) => {
+                  if (
+                    draggedMessageRef.current &&
+                    draggedMessageRef.current.conversationId !== conversation.id
+                  ) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "copy";
+                    setDragOverConversationId(conversation.id);
+                  }
+                }}
+                onDragEnter={(event) => {
+                  if (
+                    draggedMessageRef.current &&
+                    draggedMessageRef.current.conversationId !== conversation.id
+                  ) {
+                    event.preventDefault();
+                    setDragOverConversationId(conversation.id);
+                  }
+                }}
+                onDragLeave={(event) => {
+                  if (
+                    !event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    )
+                  ) {
+                    setDragOverConversationId((current) =>
+                      current === conversation.id ? null : current,
+                    );
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+
+                  const message = draggedMessageRef.current;
+                  setDragOverConversationId(null);
+
+                  if (message && message.conversationId !== conversation.id) {
+                    void handleForwardMessage(message, conversation.id, false);
+                  } else {
+                    draggedMessageRef.current = null;
+                  }
+                }}
               >
                 <div className="avatar">
                   {initials(peer?.displayName ?? conversation.title ?? "Group")}
@@ -937,6 +1217,14 @@ export default function Home() {
         {selectedConversation ? (
           <>
             <header className="chat-header">
+              <button
+                type="button"
+                className="mobile-back-button"
+                onClick={() => setSelectedId("")}
+                aria-label="Back to conversations"
+              >
+                ←
+              </button>
               <div className="avatar">
                 {initials(
                   peerFor(selectedConversation, user.id)?.displayName ??
@@ -966,92 +1254,238 @@ export default function Home() {
               <div className="header-pill">Private conversation</div>
             </header>
 
-            <div className="messages-area">
+            <div className="messages-area" ref={messagesAreaRef}>
               <div className="conversation-start">
                 <div className="start-symbol">✳</div>
                 <h3>You&apos;re connected.</h3>
                 <p>Messages in this conversation appear here.</p>
               </div>
 
-              {loadingMessages && (
-                <p className="inline-status">Loading message history…</p>
+              {hasMore && (
+                <div className="load-older-container">
+                  <button
+                    type="button"
+                    className="load-older-button"
+                    disabled={loadingOlder || !selectedId}
+                    onClick={() => {
+                      if (!selectedId || loadingOlder) return;
+
+                      const container = messagesAreaRef.current;
+                      if (!container) return;
+
+                      if (!selectedId || loadingOlder) return;
+
+                      const containerTop =
+                        container.getBoundingClientRect().top;
+
+                      const rows = Array.from(
+                        container.querySelectorAll<HTMLElement>(
+                          "[data-message-id]",
+                        ),
+                      );
+
+                      const firstVisibleRow = rows.find(
+                        (row) =>
+                          row.getBoundingClientRect().bottom > containerTop,
+                      );
+
+                      if (firstVisibleRow?.dataset.messageId) {
+                        pendingScrollRestoreRef.current = {
+                          messageId: firstVisibleRow.dataset.messageId,
+                          top: firstVisibleRow.getBoundingClientRect().top,
+                          messageCount: messages.length,
+                        };
+                      }
+
+                      void loadOlderMessages(selectedId);
+                    }}
+                  >
+                    {loadingOlder
+                      ? "Loading older messages..."
+                      : "Load older messages"}
+                  </button>
+                </div>
               )}
-              {!loadingMessages &&
-                messages.map((message) => {
-                  const own = message.senderId === user.id;
-                  return (
-                    <div
-                      key={message.id}
-                      className={`message-row ${own ? "own" : "incoming"}`}
+
+              <MessageList
+                messages={messages}
+                currentUserId={user.id}
+                loading={loadingMessages}
+                error={messagesError}
+                onRetry={() => {
+                  if (selectedId) {
+                    void loadMessages(selectedId);
+                  }
+                }}
+                onForward={(message, trigger) => {
+                  forwardTriggerRef.current = trigger;
+                  setForwardMessage(message);
+                  setForwardConversationId("");
+                  setForwardError("");
+                }}
+                onDragStart={(message, event) => {
+                  draggedMessageRef.current = message;
+                  event.dataTransfer.effectAllowed = "copy";
+                  event.dataTransfer.setData("text/plain", message.id);
+                }}
+              />
+              {forwardMessage && (
+                <div
+                  role="presentation"
+                  className="forward-overlay"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget && !forwarding) {
+                      setForwardMessage(null);
+                    }
+                  }}
+                >
+                  <section
+                    ref={forwardDialogRef}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="forward-dialog-title"
+                    aria-describedby="forward-dialog-description"
+                    className="forward-dialog"
+                    onKeyDown={(event) => {
+                      if (event.key !== "Tab") return;
+
+                      const focusable =
+                        event.currentTarget.querySelectorAll<HTMLElement>(
+                          'button:not(:disabled), select:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+                        );
+
+                      if (focusable.length === 0) {
+                        event.preventDefault();
+                        return;
+                      }
+
+                      const first = focusable[0];
+                      const last = focusable[focusable.length - 1];
+
+                      if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last.focus();
+                      } else if (
+                        !event.shiftKey &&
+                        document.activeElement === last
+                      ) {
+                        event.preventDefault();
+                        first.focus();
+                      }
+                    }}
+                  >
+                    <h2 id="forward-dialog-title">Forward message</h2>
+
+                    <p id="forward-dialog-description">
+                      {forwardMessage.content ||
+                        forwardMessage.mediaOriginalName ||
+                        "Media message"}
+                    </p>
+
+                    <label htmlFor="forward-conversation">
+                      Destination conversation
+                    </label>
+
+                    <select
+                      ref={forwardSelectRef}
+                      id="forward-conversation"
+                      value={forwardConversationId}
+                      onChange={(event) =>
+                        setForwardConversationId(event.target.value)
+                      }
+                      required
                     >
-                      <div className="message-content">
-                        <div className="message-bubble">{message.content}</div>
+                      <option value="">Choose a conversation</option>
 
-                        <span className="message-time">
-                          {new Date(message.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                          {own ? " · You" : ""}
+                      {conversations
+                        .filter(
+                          (conversation) => conversation.id !== selectedId,
+                        )
+                        .map((conversation) => (
+                          <option key={conversation.id} value={conversation.id}>
+                            {conversation.title ||
+                              conversation.members
+                                .filter((member) => member.userId !== user.id)
+                                .map((member) => member.user.displayName)
+                                .join(", ") ||
+                              "Conversation"}
+                          </option>
+                        ))}
+                    </select>
 
-                          {own &&
-                            (() => {
-                              const peerReceipts = (
-                                message.receipts ?? []
-                              ).filter((receipt) => receipt.userId !== user.id);
+                    {forwardError && (
+                      <p role="alert" aria-live="assertive">
+                        {forwardError}
+                      </p>
+                    )}
 
-                              const isRead =
-                                peerReceipts.length > 0 &&
-                                peerReceipts.every((receipt) => receipt.readAt);
+                    <div className="forward-actions">
+                      <button
+                        type="button"
+                        disabled={forwarding}
+                        onClick={() => setForwardMessage(null)}
+                      >
+                        Cancel
+                      </button>
 
-                              const isDelivered =
-                                peerReceipts.length > 0 &&
-                                peerReceipts.every(
-                                  (receipt) => receipt.deliveredAt,
-                                );
-
-                              return (
-                                <span
-                                  style={{
-                                    marginLeft: "5px",
-                                    color: isRead ? "#53bdeb" : "inherit",
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  {isRead ? "✓✓" : isDelivered ? "✓✓" : "✓"}
-                                </span>
-                              );
-                            })()}
-                        </span>
-                      </div>
+                      <button
+                        type="button"
+                        disabled={!forwardConversationId || forwarding}
+                        onClick={() => {
+                          void handleForwardMessage();
+                        }}
+                      >
+                        {forwarding ? "Forwarding…" : "Forward"}
+                      </button>
                     </div>
-                  );
-                })}
-
+                  </section>
+                </div>
+              )}
               {error && <p className="feedback error chat-error">{error}</p>}
 
               {notice && <p className="feedback success">{notice}</p>}
               <div ref={bottomRef} />
             </div>
 
-            <form className="composer" onSubmit={sendMessage}>
-              <input
-                value={draft}
-                onChange={(event) => handleDraftChange(event.target.value)}
-                placeholder={`Message ${peerFor(selectedConversation, user.id)?.displayName ?? "your group"}…`}
-                maxLength={5000}
-                aria-label="Message"
+            <MessageComposer
+              draft={draft}
+              onDraftChange={handleDraftChange}
+              onSubmit={sendMessage}
+              onUpload={(file) => {
+                void uploadMedia(file);
+              }}
+              peerName={
+                peerFor(selectedConversation, user.id)?.displayName ??
+                "your group"
+              }
+              sending={sending}
+              mediaUploading={mediaUploading}
+              uploadProgress={uploadProgress}
+              fileInputRef={fileInputRef}
+            />
+
+            {mediaUploading && (
+              <progress
+                value={uploadProgress}
+                max={100}
+                aria-label="Media upload progress"
               />
-              <span className="composer-hint">Enter to send</span>
-              <button
-                className="send-button"
-                type="submit"
-                disabled={!draft.trim() || sending}
-                aria-label="Send message"
-              >
-                {sending ? "…" : "↑"}
-              </button>
-            </form>
+            )}
+
+            {uploadError && (
+              <div role="alert">
+                <p>{uploadError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadError("");
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  Choose file again
+                </button>
+              </div>
+            )}
             <p className="composer-footer">
               Be kind. Your conversations are private.
             </p>

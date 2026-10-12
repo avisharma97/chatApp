@@ -147,6 +147,156 @@ messagesRouter.post("/:conversationId/messages", async (req, res) => {
   }
 });
 
+messagesRouter.post(
+  "/:conversationId/messages/:messageId/forward",
+  async (req, res) => {
+    const userId = req.userId;
+
+    const sourceConversation = z
+      .string()
+      .uuid()
+      .safeParse(req.params.conversationId);
+
+    const sourceMessage = z.string().uuid().safeParse(req.params.messageId);
+
+    const body = z
+      .object({
+        destinationConversationId: z.string().uuid(),
+        clientMessageId: z.string().uuid(),
+      })
+      .safeParse(req.body);
+
+    if (!userId) {
+      return res.status(401).json({ error: "UNAUTHENTICATED" });
+    }
+
+    if (
+      !sourceConversation.success ||
+      !sourceMessage.success ||
+      !body.success
+    ) {
+      return res.status(400).json({ error: "INVALID_INPUT" });
+    }
+
+    const destinationId = body.data.destinationConversationId;
+    const clientMessageId = body.data.clientMessageId;
+
+    try {
+      // User must belong to both source and destination conversations.
+      const memberships = await prisma.conversationMember.findMany({
+        where: {
+          userId,
+          conversationId: {
+            in: [sourceConversation.data, destinationId],
+          },
+        },
+        select: { conversationId: true },
+      });
+
+      const memberIds = new Set(
+        memberships.map((membership) => membership.conversationId),
+      );
+
+      if (
+        !memberIds.has(sourceConversation.data) ||
+        !memberIds.has(destinationId)
+      ) {
+        return res.status(404).json({
+          error: "CONVERSATION_NOT_FOUND",
+        });
+      }
+
+      // Idempotent retry: don't create the same forwarded message twice.
+      const existing = await prisma.message.findFirst({
+        where: { senderId: userId, clientMessageId },
+      });
+
+      if (existing) {
+        if (existing.conversationId !== destinationId) {
+          return res.status(409).json({
+            error: "CLIENT_MESSAGE_ID_ALREADY_USED",
+          });
+        }
+
+        return res.status(200).json({
+          message: existing,
+          duplicate: true,
+        });
+      }
+
+      // Load the original from the source conversation.
+      const original = await prisma.message.findFirst({
+        where: {
+          id: sourceMessage.data,
+          conversationId: sourceConversation.data,
+          deletedAt: null,
+        },
+      });
+
+      if (!original) {
+        return res.status(404).json({
+          error: "MESSAGE_NOT_FOUND",
+        });
+      }
+
+      const message = await prisma.$transaction(async (tx) => {
+        const created = await tx.message.create({
+          data: {
+            conversationId: destinationId,
+            senderId: userId,
+            clientMessageId,
+            content: original.content,
+            mediaUrl: original.mediaUrl,
+            mediaPublicId: original.mediaPublicId,
+            mediaMimeType: original.mediaMimeType,
+            mediaResourceType: original.mediaResourceType,
+            mediaSize: original.mediaSize,
+            mediaOriginalName: original.mediaOriginalName,
+          },
+        });
+
+        const recipients = await tx.conversationMember.findMany({
+          where: {
+            conversationId: destinationId,
+            userId: { not: userId },
+          },
+          select: { userId: true },
+        });
+
+        if (recipients.length > 0) {
+          await tx.messageReceipt.createMany({
+            data: recipients.map((recipient) => ({
+              messageId: created.id,
+              userId: recipient.userId,
+            })),
+            skipDuplicates: true,
+          });
+        }
+
+        await tx.conversation.update({
+          where: { id: destinationId },
+          data: { updatedAt: new Date() },
+        });
+
+        return created;
+      });
+
+      getIO().to(`conversation:${destinationId}`).emit("message:new", message);
+
+      return res.status(201).json({
+        message,
+        duplicate: false,
+      });
+    } catch (error) {
+      req.log?.error({ err: error }, "Forward message failed");
+
+      return res.status(500).json({
+        error: "INTERNAL_SERVER_ERROR",
+      });
+    }
+  },
+);
+
 // GET /api/v1/conversations/:conversationId/messages?limit=20&cursor=<messageId>
 messagesRouter.get("/:conversationId/messages", async (req, res) => {
   const userId = req.userId;
@@ -193,7 +343,15 @@ messagesRouter.get("/:conversationId/messages", async (req, res) => {
           id: query.data.cursor,
           conversationId: parsedConversationId.data,
         },
-        select: { id: true },
+        select: {
+          id: true,
+          mediaUrl: true,
+          mediaPublicId: true,
+          mediaMimeType: true,
+          mediaResourceType: true,
+          mediaSize: true,
+          mediaOriginalName: true,
+        },
       });
 
       if (!cursorMessage) {
@@ -224,6 +382,15 @@ messagesRouter.get("/:conversationId/messages", async (req, res) => {
         createdAt: true,
         editedAt: true,
         deletedAt: true,
+
+        // Media fields
+        mediaUrl: true,
+        mediaPublicId: true,
+        mediaMimeType: true,
+        mediaResourceType: true,
+        mediaSize: true,
+        mediaOriginalName: true,
+
         receipts: {
           select: {
             userId: true,

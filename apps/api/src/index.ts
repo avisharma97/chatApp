@@ -6,6 +6,7 @@ import { initializeSocket, getIO } from "./lib/socket.js";
 dotenv.config({
   path: resolve(process.cwd(), "../../.env"),
 });
+import { uploadsRouter } from "./routes/uploads.routes.js";
 import { usersRouter } from "./routes/users.routes.js";
 import { messagesRouter } from "./routes/messages.routes.js";
 import cookieParser from "cookie-parser";
@@ -82,6 +83,7 @@ app.use(
     },
   }),
 );
+
 app.use("/api/v1/conversations", (_req, res, next) => {
   res.setHeader("Cache-Control", "private, no-store");
   next();
@@ -112,6 +114,7 @@ app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", usersRouter);
 app.use("/api/v1/conversations", conversationsRouter);
 app.use("/api/v1/conversations", messagesRouter);
+app.use("/api/v1/conversations", uploadsRouter);
 
 const server = createServer(app);
 

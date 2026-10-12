@@ -120,6 +120,12 @@ export const MessageScalarFieldEnum = {
   senderId: 'senderId',
   clientMessageId: 'clientMessageId',
   content: 'content',
+  mediaUrl: 'mediaUrl',
+  mediaPublicId: 'mediaPublicId',
+  mediaMimeType: 'mediaMimeType',
+  mediaResourceType: 'mediaResourceType',
+  mediaSize: 'mediaSize',
+  mediaOriginalName: 'mediaOriginalName',
   createdAt: 'createdAt',
   editedAt: 'editedAt',
   deletedAt: 'deletedAt'
