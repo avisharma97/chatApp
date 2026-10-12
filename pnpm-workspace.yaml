@@ -7,3 +7,4 @@ allowBuilds:
   prisma: false
   unrs-resolver: false
   workerd: true
+  sharp: false
