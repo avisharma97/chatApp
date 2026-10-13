@@ -109,6 +109,25 @@ export default function CallControls({
     });
 
     localStreamRef.current = stream;
+    const audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    const micSource = audioContext.createMediaStreamSource(stream);
+
+    micSource.connect(analyser);
+
+    const samples = new Uint8Array(analyser.fftSize);
+
+    const checkMic = () => {
+      analyser.getByteTimeDomainData(samples);
+
+      const peak = Math.max(
+        ...Array.from(samples, (sample) => Math.abs(sample - 128)),
+      );
+
+      console.log("[Call] Microphone signal peak:", peak);
+    };
+
+    setInterval(checkMic, 2000);
 
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
@@ -121,6 +140,27 @@ export default function CallControls({
   const createPeer = useCallback(
     (callId: string) => {
       const pc = new RTCPeerConnection(ICE_SERVERS);
+      const timer = window.setInterval(async () => {
+        const stats = await pc.getStats();
+
+        stats.forEach((report) => {
+          if (report.type === "inbound-rtp" && report.kind === "audio") {
+            console.log("[Audio inbound]", {
+              packetsReceived: report.packetsReceived,
+              bytesReceived: report.bytesReceived,
+              audioLevel: report.audioLevel,
+            });
+          }
+
+          if (report.type === "outbound-rtp" && report.kind === "audio") {
+            console.log("[Audio outbound]", {
+              packetsSent: report.packetsSent,
+              bytesSent: report.bytesSent,
+              audioLevel: report.audioLevel,
+            });
+          }
+        });
+      }, 3000);
       pcRef.current = pc;
       remoteStreamRef.current = new MediaStream();
 
@@ -157,6 +197,23 @@ export default function CallControls({
       };
 
       pc.onconnectionstatechange = () => {
+        pc.getStats().then((stats) => {
+          stats.forEach((report) => {
+            if (report.type === "inbound-rtp" && report.kind === "audio") {
+              console.log("[Call] Incoming audio:", {
+                packetsReceived: report.packetsReceived,
+                bytesReceived: report.bytesReceived,
+              });
+            }
+
+            if (report.type === "outbound-rtp" && report.kind === "audio") {
+              console.log("[Call] Outgoing audio:", {
+                packetsSent: report.packetsSent,
+                bytesSent: report.bytesSent,
+              });
+            }
+          });
+        });
         if (
           pc.connectionState === "failed" ||
           pc.connectionState === "closed"
@@ -167,7 +224,7 @@ export default function CallControls({
         }
       };
 
-      return pc;
+      return (window.clearInterval(timer), pc);
     },
     [socket],
   );

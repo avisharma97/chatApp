@@ -1663,19 +1663,13 @@ export default function Home() {
                     <h2 id="forward-dialog-title">Forward message</h2>
 
                     <p id="forward-dialog-description">
-                      {forwardMessage.mediaUrl ? (
-                        <>
-                          {forwardMessage.mediaResourceType === "video"
-                            ? "Video"
-                            : forwardMessage.mediaResourceType === "image"
-                              ? "Image"
-                              : "Attachment"}
-                          {" · "}
-                          {forwardMessage.mediaOriginalName || "Shared media"}
-                        </>
-                      ) : (
-                        forwardMessage.content || "Message"
-                      )}
+                      {forwardMessage.mediaUrl
+                        ? forwardMessage.mediaResourceType === "video"
+                          ? "Video attachment"
+                          : forwardMessage.mediaResourceType === "image"
+                            ? "Image attachment"
+                            : "File attachment"
+                        : forwardMessage.content || "Message"}
                     </p>
 
                     <label htmlFor="forward-conversation">
