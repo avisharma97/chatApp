@@ -12,7 +12,7 @@ import type { Message } from "../../types/chat";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-export function useConversationMessages() {
+export function useConversationMessages(userId: string | null) {
   const dispatch = useAppDispatch();
   const activeRequestRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
@@ -24,6 +24,7 @@ export function useConversationMessages() {
 
   const loadMessages = useCallback(
     async (conversationId: string) => {
+      if (!userId) return;
       activeRequestRef.current?.abort();
 
       const controller = new AbortController();
@@ -83,11 +84,12 @@ export function useConversationMessages() {
         }
       }
     },
-    [dispatch],
+    [dispatch, userId],
   );
 
   const loadOlderMessages = useCallback(
     async (conversationId: string) => {
+      if (!userId) return;
       if (!hasMore || !nextCursor || loadingOlder) return;
 
       olderRequestRef.current?.abort();
@@ -147,7 +149,7 @@ export function useConversationMessages() {
         }
       }
     },
-    [dispatch, hasMore, nextCursor, loadingOlder, prependMessages],
+    [dispatch, hasMore, nextCursor, loadingOlder, userId],
   );
 
   const cancelMessages = useCallback(() => {
@@ -159,6 +161,7 @@ export function useConversationMessages() {
     activeRequestRef.current = null;
     dispatch(setMessagesLoading(false));
   }, [dispatch]);
+
   useEffect(
     () => () => {
       requestIdRef.current += 1;
@@ -173,5 +176,6 @@ export function useConversationMessages() {
     cancelMessages,
     hasMore,
     loadingOlder,
+    userId,
   };
 }

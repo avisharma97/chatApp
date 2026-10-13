@@ -28,10 +28,12 @@ export type AggregateMessage = {
 
 export type MessageAvgAggregateOutputType = {
   mediaSize: number | null
+  encryptionVersion: number | null
 }
 
 export type MessageSumAggregateOutputType = {
   mediaSize: number | null
+  encryptionVersion: number | null
 }
 
 export type MessageMinAggregateOutputType = {
@@ -49,6 +51,7 @@ export type MessageMinAggregateOutputType = {
   createdAt: Date | null
   editedAt: Date | null
   deletedAt: Date | null
+  encryptionVersion: number | null
 }
 
 export type MessageMaxAggregateOutputType = {
@@ -66,6 +69,7 @@ export type MessageMaxAggregateOutputType = {
   createdAt: Date | null
   editedAt: Date | null
   deletedAt: Date | null
+  encryptionVersion: number | null
 }
 
 export type MessageCountAggregateOutputType = {
@@ -83,16 +87,20 @@ export type MessageCountAggregateOutputType = {
   createdAt: number
   editedAt: number
   deletedAt: number
+  encryptedPayload: number
+  encryptionVersion: number
   _all: number
 }
 
 
 export type MessageAvgAggregateInputType = {
   mediaSize?: true
+  encryptionVersion?: true
 }
 
 export type MessageSumAggregateInputType = {
   mediaSize?: true
+  encryptionVersion?: true
 }
 
 export type MessageMinAggregateInputType = {
@@ -110,6 +118,7 @@ export type MessageMinAggregateInputType = {
   createdAt?: true
   editedAt?: true
   deletedAt?: true
+  encryptionVersion?: true
 }
 
 export type MessageMaxAggregateInputType = {
@@ -127,6 +136,7 @@ export type MessageMaxAggregateInputType = {
   createdAt?: true
   editedAt?: true
   deletedAt?: true
+  encryptionVersion?: true
 }
 
 export type MessageCountAggregateInputType = {
@@ -144,6 +154,8 @@ export type MessageCountAggregateInputType = {
   createdAt?: true
   editedAt?: true
   deletedAt?: true
+  encryptedPayload?: true
+  encryptionVersion?: true
   _all?: true
 }
 
@@ -248,6 +260,8 @@ export type MessageGroupByOutputType = {
   createdAt: Date
   editedAt: Date | null
   deletedAt: Date | null
+  encryptedPayload: runtime.JsonValue | null
+  encryptionVersion: number | null
   _count: MessageCountAggregateOutputType | null
   _avg: MessageAvgAggregateOutputType | null
   _sum: MessageSumAggregateOutputType | null
@@ -288,6 +302,8 @@ export type MessageWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
   editedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
   deletedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  encryptedPayload?: Prisma.JsonNullableFilter<"Message">
+  encryptionVersion?: Prisma.IntNullableFilter<"Message"> | number | null
   receipts?: Prisma.MessageReceiptListRelationFilter
   conversation?: Prisma.XOR<Prisma.ConversationScalarRelationFilter, Prisma.ConversationWhereInput>
   sender?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -308,6 +324,8 @@ export type MessageOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   editedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  encryptedPayload?: Prisma.SortOrderInput | Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   receipts?: Prisma.MessageReceiptOrderByRelationAggregateInput
   conversation?: Prisma.ConversationOrderByWithRelationInput
   sender?: Prisma.UserOrderByWithRelationInput
@@ -332,6 +350,8 @@ export type MessageWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
   editedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
   deletedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  encryptedPayload?: Prisma.JsonNullableFilter<"Message">
+  encryptionVersion?: Prisma.IntNullableFilter<"Message"> | number | null
   receipts?: Prisma.MessageReceiptListRelationFilter
   conversation?: Prisma.XOR<Prisma.ConversationScalarRelationFilter, Prisma.ConversationWhereInput>
   sender?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -352,6 +372,8 @@ export type MessageOrderByWithAggregationInput = {
   createdAt?: Prisma.SortOrder
   editedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   deletedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  encryptedPayload?: Prisma.SortOrderInput | Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.MessageCountOrderByAggregateInput
   _avg?: Prisma.MessageAvgOrderByAggregateInput
   _max?: Prisma.MessageMaxOrderByAggregateInput
@@ -377,6 +399,8 @@ export type MessageScalarWhereWithAggregatesInput = {
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"Message"> | Date | string
   editedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
   deletedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"Message"> | Date | string | null
+  encryptedPayload?: Prisma.JsonNullableWithAggregatesFilter<"Message">
+  encryptionVersion?: Prisma.IntNullableWithAggregatesFilter<"Message"> | number | null
 }
 
 export type MessageCreateInput = {
@@ -392,6 +416,8 @@ export type MessageCreateInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptCreateNestedManyWithoutMessageInput
   conversation: Prisma.ConversationCreateNestedOneWithoutMessagesInput
   sender: Prisma.UserCreateNestedOneWithoutMessagesInput
@@ -412,6 +438,8 @@ export type MessageUncheckedCreateInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptUncheckedCreateNestedManyWithoutMessageInput
 }
 
@@ -428,6 +456,8 @@ export type MessageUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUpdateManyWithoutMessageNestedInput
   conversation?: Prisma.ConversationUpdateOneRequiredWithoutMessagesNestedInput
   sender?: Prisma.UserUpdateOneRequiredWithoutMessagesNestedInput
@@ -448,6 +478,8 @@ export type MessageUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUncheckedUpdateManyWithoutMessageNestedInput
 }
 
@@ -466,6 +498,8 @@ export type MessageCreateManyInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
 }
 
 export type MessageUpdateManyMutationInput = {
@@ -481,6 +515,8 @@ export type MessageUpdateManyMutationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type MessageUncheckedUpdateManyInput = {
@@ -498,6 +534,8 @@ export type MessageUncheckedUpdateManyInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type MessageListRelationFilter = {
@@ -530,10 +568,13 @@ export type MessageCountOrderByAggregateInput = {
   createdAt?: Prisma.SortOrder
   editedAt?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
+  encryptedPayload?: Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrder
 }
 
 export type MessageAvgOrderByAggregateInput = {
   mediaSize?: Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrder
 }
 
 export type MessageMaxOrderByAggregateInput = {
@@ -551,6 +592,7 @@ export type MessageMaxOrderByAggregateInput = {
   createdAt?: Prisma.SortOrder
   editedAt?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrder
 }
 
 export type MessageMinOrderByAggregateInput = {
@@ -568,10 +610,12 @@ export type MessageMinOrderByAggregateInput = {
   createdAt?: Prisma.SortOrder
   editedAt?: Prisma.SortOrder
   deletedAt?: Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrder
 }
 
 export type MessageSumOrderByAggregateInput = {
   mediaSize?: Prisma.SortOrder
+  encryptionVersion?: Prisma.SortOrder
 }
 
 export type MessageScalarRelationFilter = {
@@ -698,6 +742,8 @@ export type MessageCreateWithoutSenderInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptCreateNestedManyWithoutMessageInput
   conversation: Prisma.ConversationCreateNestedOneWithoutMessagesInput
 }
@@ -716,6 +762,8 @@ export type MessageUncheckedCreateWithoutSenderInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptUncheckedCreateNestedManyWithoutMessageInput
 }
 
@@ -763,6 +811,8 @@ export type MessageScalarWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"Message"> | Date | string
   editedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
   deletedAt?: Prisma.DateTimeNullableFilter<"Message"> | Date | string | null
+  encryptedPayload?: Prisma.JsonNullableFilter<"Message">
+  encryptionVersion?: Prisma.IntNullableFilter<"Message"> | number | null
 }
 
 export type MessageCreateWithoutConversationInput = {
@@ -778,6 +828,8 @@ export type MessageCreateWithoutConversationInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptCreateNestedManyWithoutMessageInput
   sender: Prisma.UserCreateNestedOneWithoutMessagesInput
 }
@@ -796,6 +848,8 @@ export type MessageUncheckedCreateWithoutConversationInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   receipts?: Prisma.MessageReceiptUncheckedCreateNestedManyWithoutMessageInput
 }
 
@@ -838,6 +892,8 @@ export type MessageCreateWithoutReceiptsInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
   conversation: Prisma.ConversationCreateNestedOneWithoutMessagesInput
   sender: Prisma.UserCreateNestedOneWithoutMessagesInput
 }
@@ -857,6 +913,8 @@ export type MessageUncheckedCreateWithoutReceiptsInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
 }
 
 export type MessageCreateOrConnectWithoutReceiptsInput = {
@@ -888,6 +946,8 @@ export type MessageUpdateWithoutReceiptsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   conversation?: Prisma.ConversationUpdateOneRequiredWithoutMessagesNestedInput
   sender?: Prisma.UserUpdateOneRequiredWithoutMessagesNestedInput
 }
@@ -907,6 +967,8 @@ export type MessageUncheckedUpdateWithoutReceiptsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type MessageCreateManySenderInput = {
@@ -923,6 +985,8 @@ export type MessageCreateManySenderInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
 }
 
 export type MessageUpdateWithoutSenderInput = {
@@ -938,6 +1002,8 @@ export type MessageUpdateWithoutSenderInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUpdateManyWithoutMessageNestedInput
   conversation?: Prisma.ConversationUpdateOneRequiredWithoutMessagesNestedInput
 }
@@ -956,6 +1022,8 @@ export type MessageUncheckedUpdateWithoutSenderInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUncheckedUpdateManyWithoutMessageNestedInput
 }
 
@@ -973,6 +1041,8 @@ export type MessageUncheckedUpdateManyWithoutSenderInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type MessageCreateManyConversationInput = {
@@ -989,6 +1059,8 @@ export type MessageCreateManyConversationInput = {
   createdAt?: Date | string
   editedAt?: Date | string | null
   deletedAt?: Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: number | null
 }
 
 export type MessageUpdateWithoutConversationInput = {
@@ -1004,6 +1076,8 @@ export type MessageUpdateWithoutConversationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUpdateManyWithoutMessageNestedInput
   sender?: Prisma.UserUpdateOneRequiredWithoutMessagesNestedInput
 }
@@ -1022,6 +1096,8 @@ export type MessageUncheckedUpdateWithoutConversationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   receipts?: Prisma.MessageReceiptUncheckedUpdateManyWithoutMessageNestedInput
 }
 
@@ -1039,6 +1115,8 @@ export type MessageUncheckedUpdateManyWithoutConversationInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   editedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   deletedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedPayload?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  encryptionVersion?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -1087,6 +1165,8 @@ export type MessageSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   createdAt?: boolean
   editedAt?: boolean
   deletedAt?: boolean
+  encryptedPayload?: boolean
+  encryptionVersion?: boolean
   receipts?: boolean | Prisma.Message$receiptsArgs<ExtArgs>
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
   sender?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1108,6 +1188,8 @@ export type MessageSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Exten
   createdAt?: boolean
   editedAt?: boolean
   deletedAt?: boolean
+  encryptedPayload?: boolean
+  encryptionVersion?: boolean
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
   sender?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["message"]>
@@ -1127,6 +1209,8 @@ export type MessageSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Exten
   createdAt?: boolean
   editedAt?: boolean
   deletedAt?: boolean
+  encryptedPayload?: boolean
+  encryptionVersion?: boolean
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
   sender?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["message"]>
@@ -1146,9 +1230,11 @@ export type MessageSelectScalar = {
   createdAt?: boolean
   editedAt?: boolean
   deletedAt?: boolean
+  encryptedPayload?: boolean
+  encryptionVersion?: boolean
 }
 
-export type MessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "conversationId" | "senderId" | "clientMessageId" | "content" | "mediaUrl" | "mediaPublicId" | "mediaMimeType" | "mediaResourceType" | "mediaSize" | "mediaOriginalName" | "createdAt" | "editedAt" | "deletedAt", ExtArgs["result"]["message"]>
+export type MessageOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "conversationId" | "senderId" | "clientMessageId" | "content" | "mediaUrl" | "mediaPublicId" | "mediaMimeType" | "mediaResourceType" | "mediaSize" | "mediaOriginalName" | "createdAt" | "editedAt" | "deletedAt" | "encryptedPayload" | "encryptionVersion", ExtArgs["result"]["message"]>
 export type MessageInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   receipts?: boolean | Prisma.Message$receiptsArgs<ExtArgs>
   conversation?: boolean | Prisma.ConversationDefaultArgs<ExtArgs>
@@ -1186,6 +1272,8 @@ export type $MessagePayload<ExtArgs extends runtime.Types.Extensions.InternalArg
     createdAt: Date
     editedAt: Date | null
     deletedAt: Date | null
+    encryptedPayload: runtime.JsonValue | null
+    encryptionVersion: number | null
   }, ExtArgs["result"]["message"]>
   composites: {}
 }
@@ -1626,6 +1714,8 @@ export interface MessageFieldRefs {
   readonly createdAt: Prisma.FieldRef<"Message", 'DateTime'>
   readonly editedAt: Prisma.FieldRef<"Message", 'DateTime'>
   readonly deletedAt: Prisma.FieldRef<"Message", 'DateTime'>
+  readonly encryptedPayload: Prisma.FieldRef<"Message", 'Json'>
+  readonly encryptionVersion: Prisma.FieldRef<"Message", 'Int'>
 }
 
 

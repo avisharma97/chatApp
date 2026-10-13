@@ -646,6 +646,7 @@ authRouter.get("/me", async (req, res) => {
         email: session.user.email,
         username: session.user.username,
         displayName: session.user.displayName,
+        avatarUrl: session.user.avatarUrl,
         createdAt: session.user.createdAt,
       },
     });

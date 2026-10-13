@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { authRouter } from "./routes/auth.routes.js";
 import { createServer } from "node:http";
 import { initializeSocket, getIO } from "./lib/socket.js";
+import { callsRouter } from "./routes/calls.routes.js";
 dotenv.config({
   path: resolve(process.cwd(), "../../.env"),
 });
@@ -48,6 +49,8 @@ const logger = pino({
 });
 
 const app = express();
+
+app.set("trust proxy", 1);
 
 app.disable("x-powered-by");
 
@@ -115,6 +118,7 @@ app.use("/api/v1/users", usersRouter);
 app.use("/api/v1/conversations", conversationsRouter);
 app.use("/api/v1/conversations", messagesRouter);
 app.use("/api/v1/conversations", uploadsRouter);
+app.use("/api/v1/calls", callsRouter);
 
 const server = createServer(app);
 

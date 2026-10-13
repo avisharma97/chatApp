@@ -64,6 +64,40 @@ const chatSlice = createSlice({
         state.messages.push(incoming);
       }
     },
+    updateMessage(
+      state,
+      action: PayloadAction<{
+        id: string;
+        content: string;
+        editedAt: string;
+      }>,
+    ) {
+      const message = state.messages.find(
+        (item) => item.id === action.payload.id,
+      );
+
+      if (!message || message.deletedAt) return;
+
+      message.content = action.payload.content;
+      message.editedAt = action.payload.editedAt;
+    },
+
+    deleteMessage(
+      state,
+      action: PayloadAction<{
+        id: string;
+        deletedAt: string;
+      }>,
+    ) {
+      const message = state.messages.find(
+        (item) => item.id === action.payload.id,
+      );
+
+      if (!message) return;
+
+      message.content = "";
+      message.deletedAt = action.payload.deletedAt;
+    },
     upsertConversation(state, action: PayloadAction<Conversation>) {
       const conversation = action.payload;
 
@@ -132,6 +166,8 @@ export const {
   setMessagesError,
   clearChat,
   upsertConversation,
+  updateMessage,
+  deleteMessage,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

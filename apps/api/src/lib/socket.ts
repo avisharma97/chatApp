@@ -2,7 +2,7 @@ import { Server } from "socket.io";
 import type { Server as HttpServer } from "node:http";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-
+import { registerCallHandlers } from "./calls.js";
 const require = createRequire(import.meta.url);
 const cookie = require("cookie") as typeof import("cookie");
 import { z } from "zod";
@@ -101,6 +101,10 @@ export function initializeSocket(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const userId = socket.data.userId as string;
+    // Server-controlled room: clients cannot choose another user's ID.
+    void socket.join(`user:${userId}`);
+
+    registerCallHandlers(io!, socket);
     const wasOffline = !onlineUsers.has(userId);
 
     if (wasOffline) {

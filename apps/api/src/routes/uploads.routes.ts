@@ -242,3 +242,88 @@ uploadsRouter.post("/:conversationId/media", async (req, res, next) => {
     next(error);
   }
 });
+
+uploadsRouter.post("/avatar", (req, res, next) => {
+  if (!req.userId) {
+    return res.status(401).json({ error: "UNAUTHENTICATED" });
+  }
+
+  receiveMedia(req, res, (uploadError) => {
+    if (uploadError) {
+      next(uploadError);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const file = req.file;
+
+        if (!file) {
+          res.status(400).json({ error: "FILE_REQUIRED" });
+          return;
+        }
+
+        // Avatar images: maximum 5 MB.
+        if (file.size > 5 * 1024 * 1024) {
+          res.status(413).json({ error: "AVATAR_TOO_LARGE" });
+          return;
+        }
+
+        const detected = await fileTypeFromBuffer(file.buffer);
+
+        const allowed = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+        if (!detected || !allowed.has(detected.mime)) {
+          res.status(415).json({ error: "INVALID_AVATAR_TYPE" });
+          return;
+        }
+
+        const result = await new Promise<UploadApiResponse>(
+          (resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              {
+                folder: "chatapp/avatars",
+                resource_type: "image",
+                transformation: [
+                  { width: 512, height: 512, crop: "fill", gravity: "face" },
+                ],
+              },
+              (error, uploaded) => {
+                if (error) {
+                  reject(error);
+                  return;
+                }
+
+                if (!uploaded) {
+                  reject(new Error("Cloudinary returned no upload result"));
+                  return;
+                }
+
+                resolve(uploaded);
+              },
+            );
+
+            stream.end(file.buffer);
+          },
+        );
+
+        const user = await prisma.user.update({
+          where: { id: req.userId! },
+          data: { avatarUrl: result.secure_url },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            displayName: true,
+            avatarUrl: true,
+          },
+        });
+
+        res.json({ user });
+      } catch (error) {
+        req.log?.error({ err: error }, "Avatar upload failed");
+        res.status(502).json({ error: "AVATAR_UPLOAD_FAILED" });
+      }
+    })();
+  });
+});

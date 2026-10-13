@@ -58,7 +58,8 @@ export const ModelName = {
   Session: 'Session',
   MessageReceipt: 'MessageReceipt',
   UserIdentity: 'UserIdentity',
-  PasswordResetToken: 'PasswordResetToken'
+  PasswordResetToken: 'PasswordResetToken',
+  CallHistory: 'CallHistory'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -86,7 +87,9 @@ export const UserScalarFieldEnum = {
   avatarUrl: 'avatarUrl',
   isActive: 'isActive',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  encryptionPublicKey: 'encryptionPublicKey',
+  encryptionKeyVersion: 'encryptionKeyVersion'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
@@ -128,7 +131,9 @@ export const MessageScalarFieldEnum = {
   mediaOriginalName: 'mediaOriginalName',
   createdAt: 'createdAt',
   editedAt: 'editedAt',
-  deletedAt: 'deletedAt'
+  deletedAt: 'deletedAt',
+  encryptedPayload: 'encryptedPayload',
+  encryptionVersion: 'encryptionVersion'
 } as const
 
 export type MessageScalarFieldEnum = (typeof MessageScalarFieldEnum)[keyof typeof MessageScalarFieldEnum]
@@ -180,12 +185,37 @@ export const PasswordResetTokenScalarFieldEnum = {
 export type PasswordResetTokenScalarFieldEnum = (typeof PasswordResetTokenScalarFieldEnum)[keyof typeof PasswordResetTokenScalarFieldEnum]
 
 
+export const CallHistoryScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  callerId: 'callerId',
+  calleeId: 'calleeId',
+  type: 'type',
+  status: 'status',
+  startedAt: 'startedAt',
+  acceptedAt: 'acceptedAt',
+  endedAt: 'endedAt',
+  durationSeconds: 'durationSeconds',
+  createdAt: 'createdAt'
+} as const
+
+export type CallHistoryScalarFieldEnum = (typeof CallHistoryScalarFieldEnum)[keyof typeof CallHistoryScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
 } as const
 
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+export const NullableJsonNullValueInput = {
+  DbNull: DbNull,
+  JsonNull: JsonNull
+} as const
+
+export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
 
 
 export const QueryMode = {
@@ -202,4 +232,13 @@ export const NullsOrder = {
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 

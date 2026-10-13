@@ -404,7 +404,8 @@ export const ModelName = {
   Session: 'Session',
   MessageReceipt: 'MessageReceipt',
   UserIdentity: 'UserIdentity',
-  PasswordResetToken: 'PasswordResetToken'
+  PasswordResetToken: 'PasswordResetToken',
+  CallHistory: 'CallHistory'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -420,7 +421,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "conversation" | "conversationMember" | "message" | "session" | "messageReceipt" | "userIdentity" | "passwordResetToken"
+    modelProps: "user" | "conversation" | "conversationMember" | "message" | "session" | "messageReceipt" | "userIdentity" | "passwordResetToken" | "callHistory"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1016,6 +1017,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    CallHistory: {
+      payload: Prisma.$CallHistoryPayload<ExtArgs>
+      fields: Prisma.CallHistoryFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.CallHistoryFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.CallHistoryFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        findFirst: {
+          args: Prisma.CallHistoryFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.CallHistoryFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        findMany: {
+          args: Prisma.CallHistoryFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>[]
+        }
+        create: {
+          args: Prisma.CallHistoryCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        createMany: {
+          args: Prisma.CallHistoryCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.CallHistoryCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>[]
+        }
+        delete: {
+          args: Prisma.CallHistoryDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        update: {
+          args: Prisma.CallHistoryUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        deleteMany: {
+          args: Prisma.CallHistoryDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.CallHistoryUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.CallHistoryUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>[]
+        }
+        upsert: {
+          args: Prisma.CallHistoryUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$CallHistoryPayload>
+        }
+        aggregate: {
+          args: Prisma.CallHistoryAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateCallHistory>
+        }
+        groupBy: {
+          args: Prisma.CallHistoryGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CallHistoryGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.CallHistoryCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.CallHistoryCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -1064,7 +1139,9 @@ export const UserScalarFieldEnum = {
   avatarUrl: 'avatarUrl',
   isActive: 'isActive',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  encryptionPublicKey: 'encryptionPublicKey',
+  encryptionKeyVersion: 'encryptionKeyVersion'
 } as const
 
 export type UserScalarFieldEnum = (typeof UserScalarFieldEnum)[keyof typeof UserScalarFieldEnum]
@@ -1106,7 +1183,9 @@ export const MessageScalarFieldEnum = {
   mediaOriginalName: 'mediaOriginalName',
   createdAt: 'createdAt',
   editedAt: 'editedAt',
-  deletedAt: 'deletedAt'
+  deletedAt: 'deletedAt',
+  encryptedPayload: 'encryptedPayload',
+  encryptionVersion: 'encryptionVersion'
 } as const
 
 export type MessageScalarFieldEnum = (typeof MessageScalarFieldEnum)[keyof typeof MessageScalarFieldEnum]
@@ -1158,12 +1237,37 @@ export const PasswordResetTokenScalarFieldEnum = {
 export type PasswordResetTokenScalarFieldEnum = (typeof PasswordResetTokenScalarFieldEnum)[keyof typeof PasswordResetTokenScalarFieldEnum]
 
 
+export const CallHistoryScalarFieldEnum = {
+  id: 'id',
+  conversationId: 'conversationId',
+  callerId: 'callerId',
+  calleeId: 'calleeId',
+  type: 'type',
+  status: 'status',
+  startedAt: 'startedAt',
+  acceptedAt: 'acceptedAt',
+  endedAt: 'endedAt',
+  durationSeconds: 'durationSeconds',
+  createdAt: 'createdAt'
+} as const
+
+export type CallHistoryScalarFieldEnum = (typeof CallHistoryScalarFieldEnum)[keyof typeof CallHistoryScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
 } as const
 
 export type SortOrder = (typeof SortOrder)[keyof typeof SortOrder]
+
+
+export const NullableJsonNullValueInput = {
+  DbNull: DbNull,
+  JsonNull: JsonNull
+} as const
+
+export type NullableJsonNullValueInput = (typeof NullableJsonNullValueInput)[keyof typeof NullableJsonNullValueInput]
 
 
 export const QueryMode = {
@@ -1180,6 +1284,15 @@ export const NullsOrder = {
 } as const
 
 export type NullsOrder = (typeof NullsOrder)[keyof typeof NullsOrder]
+
+
+export const JsonNullValueFilter = {
+  DbNull: DbNull,
+  JsonNull: JsonNull,
+  AnyNull: AnyNull
+} as const
+
+export type JsonNullValueFilter = (typeof JsonNullValueFilter)[keyof typeof JsonNullValueFilter]
 
 
 
@@ -1224,6 +1337,20 @@ export type ListDateTimeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaM
 
 
 /**
+ * Reference to a field of type 'Int'
+ */
+export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
+
+
+
+/**
+ * Reference to a field of type 'Int[]'
+ */
+export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
+
+
+
+/**
  * Reference to a field of type 'ConversationType'
  */
 export type EnumConversationTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'ConversationType'>
@@ -1238,16 +1365,16 @@ export type ListEnumConversationTypeFieldRefInput<$PrismaModel> = FieldRefInputT
 
 
 /**
- * Reference to a field of type 'Int'
+ * Reference to a field of type 'Json'
  */
-export type IntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int'>
+export type JsonFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Json'>
 
 
 
 /**
- * Reference to a field of type 'Int[]'
+ * Reference to a field of type 'QueryMode'
  */
-export type ListIntFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Int[]'>
+export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
 
 
 
@@ -1423,6 +1550,7 @@ export type GlobalOmitConfig = {
   messageReceipt?: Prisma.MessageReceiptOmit
   userIdentity?: Prisma.UserIdentityOmit
   passwordResetToken?: Prisma.PasswordResetTokenOmit
+  callHistory?: Prisma.CallHistoryOmit
 }
 
 /* Types for Logging */

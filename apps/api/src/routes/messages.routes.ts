@@ -5,12 +5,11 @@ import { requireAuth } from "../middleware/require-auth.js";
 import { getIO } from "../lib/socket.js";
 export const messagesRouter = Router();
 
-messagesRouter.use(requireAuth);
-
 const sendMessageSchema = z.object({
   clientMessageId: z.string().uuid(),
   content: z.string().trim().min(1).max(5000),
 });
+messagesRouter.use(requireAuth);
 
 // POST /api/v1/conversations/:conversationId/messages
 messagesRouter.post("/:conversationId/messages", async (req, res) => {
@@ -421,3 +420,174 @@ messagesRouter.get("/:conversationId/messages", async (req, res) => {
     });
   }
 });
+
+// PATCH /api/v1/conversations/:conversationId/messages/:messageId
+messagesRouter.patch(
+  "/:conversationId/messages/:messageId",
+  async (req, res) => {
+    const userId = req.userId;
+
+    const params = z
+      .object({
+        conversationId: z.string().uuid(),
+        messageId: z.string().uuid(),
+      })
+      .safeParse(req.params);
+
+    const body = z
+      .object({
+        content: z.string().trim().min(1).max(5000),
+      })
+      .strict()
+      .safeParse(req.body);
+
+    if (!userId) {
+      return res.status(401).json({ error: "UNAUTHENTICATED" });
+    }
+
+    if (!params.success || !body.success) {
+      return res.status(400).json({ error: "INVALID_INPUT" });
+    }
+
+    try {
+      const message = await prisma.message.findFirst({
+        where: {
+          id: params.data.messageId,
+          conversationId: params.data.conversationId,
+        },
+      });
+
+      if (!message) {
+        return res.status(404).json({ error: "MESSAGE_NOT_FOUND" });
+      }
+
+      if (message.senderId !== userId) {
+        return res.status(403).json({ error: "FORBIDDEN" });
+      }
+
+      if (message.deletedAt) {
+        return res.status(409).json({ error: "MESSAGE_ALREADY_DELETED" });
+      }
+
+      const updated = await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          content: body.data.content,
+          editedAt: new Date(),
+        },
+        select: {
+          id: true,
+          conversationId: true,
+          senderId: true,
+          clientMessageId: true,
+          content: true,
+          createdAt: true,
+          editedAt: true,
+          deletedAt: true,
+          mediaUrl: true,
+          mediaMimeType: true,
+          mediaResourceType: true,
+          mediaSize: true,
+          mediaOriginalName: true,
+        },
+      });
+
+      getIO()
+        .to(`conversation:${updated.conversationId}`)
+        .emit("message:updated", updated);
+
+      return res.json({ message: updated });
+    } catch (error) {
+      req.log?.error({ err: error }, "Edit message failed");
+
+      return res.status(500).json({
+        error: "INTERNAL_SERVER_ERROR",
+      });
+    }
+  },
+);
+
+// DELETE /api/v1/conversations/:conversationId/messages/:messageId
+messagesRouter.delete(
+  "/:conversationId/messages/:messageId",
+  async (req, res) => {
+    const userId = req.userId;
+
+    const params = z
+      .object({
+        conversationId: z.string().uuid(),
+        messageId: z.string().uuid(),
+      })
+      .safeParse(req.params);
+
+    if (!userId) {
+      return res.status(401).json({ error: "UNAUTHENTICATED" });
+    }
+
+    if (!params.success) {
+      return res.status(400).json({ error: "INVALID_INPUT" });
+    }
+
+    try {
+      const message = await prisma.message.findFirst({
+        where: {
+          id: params.data.messageId,
+          conversationId: params.data.conversationId,
+        },
+      });
+
+      if (!message) {
+        return res.status(404).json({ error: "MESSAGE_NOT_FOUND" });
+      }
+
+      if (message.senderId !== userId) {
+        return res.status(403).json({ error: "FORBIDDEN" });
+      }
+
+      if (message.deletedAt) {
+        return res.status(409).json({ error: "MESSAGE_ALREADY_DELETED" });
+      }
+
+      const deletedAt = new Date();
+
+      const updated = await prisma.message.update({
+        where: { id: message.id },
+        data: {
+          content: "",
+          deletedAt,
+        },
+        select: {
+          id: true,
+          conversationId: true,
+          senderId: true,
+          clientMessageId: true,
+          content: true,
+          createdAt: true,
+          editedAt: true,
+          deletedAt: true,
+          mediaUrl: true,
+          mediaMimeType: true,
+          mediaResourceType: true,
+          mediaSize: true,
+          mediaOriginalName: true,
+        },
+      });
+
+      getIO()
+        .to(`conversation:${updated.conversationId}`)
+        .emit("message:deleted", {
+          id: updated.id,
+          conversationId: updated.conversationId,
+          deletedAt: updated.deletedAt,
+        });
+
+      return res.json({ message: updated });
+    } catch (error) {
+      req.log?.error({ err: error }, "Delete message failed");
+
+      return res.status(500).json({
+        error: "INTERNAL_SERVER_ERROR",
+      });
+    }
+  },
+);

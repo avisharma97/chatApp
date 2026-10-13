@@ -19,6 +19,8 @@ const defaultProps = {
   error: null,
   onRetry: vi.fn(),
   onForward: vi.fn(),
+  onEdit: vi.fn(async () => undefined),
+  onDelete: vi.fn(async () => undefined),
 };
 
 describe("MessageList", () => {
@@ -144,5 +146,39 @@ describe("MessageList", () => {
 
     expect(screen.getByRole("alert")).toBeInTheDocument();
     expect(screen.queryByText("Hello there")).not.toBeInTheDocument();
+  });
+  it("shows edit and delete only for my non-deleted messages", () => {
+    const messages = [
+      createMessage({ id: "own-message" }),
+      createMessage({
+        id: "incoming-message",
+        senderId: "user-2",
+      }),
+      createMessage({
+        id: "deleted-message",
+        deletedAt: "2026-10-13T09:00:00.000Z",
+        content: "",
+      }),
+    ];
+
+    render(<MessageList {...defaultProps} messages={messages} />);
+
+    expect(
+      screen.getAllByRole("button", { name: "Edit message" }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: "Delete message" }),
+    ).toHaveLength(1);
+    expect(screen.getByText("This message was deleted.")).toBeInTheDocument();
+  });
+
+  it("opens the inline editor with the existing message content", () => {
+    render(<MessageList {...defaultProps} messages={[createMessage()]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit message" }));
+
+    expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveValue(
+      "Hello there",
+    );
   });
 });

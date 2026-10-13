@@ -8,6 +8,9 @@ import {
   useState,
   useLayoutEffect,
 } from "react";
+
+import UserAvatar from "@/components/UserAvatar";
+import CallControls from "../features/chat/CallControls";
 import { io, Socket } from "socket.io-client";
 import Link from "next/link";
 import { useAppDispatch, useAppSelector } from "../lib/hooks";
@@ -16,6 +19,8 @@ import {
   addMessage,
   setMessages,
   setConversations,
+  updateMessage,
+  deleteMessage,
   updateMessageReceipt,
   upsertConversation,
   setMessagesLoading,
@@ -28,11 +33,16 @@ import type { User, SearchUser, Message, Conversation } from "../types/chat";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
   const response = await fetch(`${API}${path}`, {
     ...options,
     credentials: "include",
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(!isFormData && options.body
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...options.headers,
     },
   });
@@ -65,7 +75,15 @@ function errorText(error: unknown) {
 }
 
 function initials(name: string) {
-  return name.trim().slice(0, 2).toUpperCase() || "?";
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "?"
+  );
 }
 
 function peerFor(conversation: Conversation, userId: string) {
@@ -95,7 +113,7 @@ export default function Home() {
     cancelMessages,
     hasMore,
     loadingOlder,
-  } = useConversationMessages();
+  } = useConversationMessages(user?.id ?? null);
   const dispatch = useAppDispatch();
   const messages = useAppSelector((state) => state.chat.messages);
   const conversations = useAppSelector((state) => state.chat.conversations);
@@ -115,6 +133,14 @@ export default function Home() {
   const [mediaUploading, setMediaUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState("");
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileUsername, setProfileUsername] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [forwardSuccess, setForwardSuccess] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -234,11 +260,7 @@ export default function Home() {
         const conversationId =
           list.find((conversation) => conversation.id === savedId)?.id ??
           list[0].id;
-        console.log("RESTORE DEBUG", {
-          savedId,
-          selectedConversationId: conversationId,
-          conversations: list.map((conversation) => conversation.id),
-        });
+
         setSelectedId(conversationId);
       } catch (error) {
         if (active) {
@@ -432,28 +454,39 @@ export default function Home() {
     socket.on("connect_error", () => setSocketStatus("Connection error"));
 
     socket.on("message:new", (message: Message) => {
-      const activeConversationId = selectedIdRef.current;
+      dispatch(addMessage(message));
+    });
+    socket.on("message:updated", (message: Message) => {
+      if (message.conversationId !== selectedIdRef.current) return;
 
-      if (message.conversationId === activeConversationId) {
-        dispatch(addMessage(message));
+      const content = message.content;
 
-        // Recipient acknowledges delivery and reading.
-        if (message.senderId !== user.id) {
-          socket.emit("message:delivered", {
-            messageId: message.id,
-          });
-
-          if (document.visibilityState === "visible") {
-            socket.emit("conversation:read", {
-              conversationId: message.conversationId,
-            });
-          }
-        }
-      }
-
-      void refreshConversations().catch(() => undefined);
+      dispatch(
+        updateMessage({
+          id: message.id,
+          content,
+          editedAt: message.editedAt ?? new Date().toISOString(),
+        }),
+      );
     });
 
+    socket.on(
+      "message:deleted",
+      (event: {
+        id: string;
+        conversationId: string;
+        deletedAt: string | null;
+      }) => {
+        if (event.conversationId !== selectedIdRef.current) return;
+
+        dispatch(
+          deleteMessage({
+            id: event.id,
+            deletedAt: event.deletedAt ?? new Date().toISOString(),
+          }),
+        );
+      },
+    );
     socket.on(
       "message:receipt",
       (receipt: {
@@ -770,6 +803,40 @@ export default function Home() {
       typingTimeoutRef.current = null;
     }, 1500);
   }
+
+  async function editMessage(message: Message, content: string): Promise<void> {
+    const { message: updated } = await api<{ message: Message }>(
+      `/api/v1/conversations/${encodeURIComponent(message.conversationId)}/messages/${encodeURIComponent(message.id)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ content }),
+      },
+    );
+
+    dispatch(
+      updateMessage({
+        id: updated.id,
+        content: updated.content,
+        editedAt: updated.editedAt ?? new Date().toISOString(),
+      }),
+    );
+  }
+
+  async function deleteChatMessage(message: Message): Promise<void> {
+    const { message: deleted } = await api<{ message: Message }>(
+      `/api/v1/conversations/${encodeURIComponent(message.conversationId)}/messages/${encodeURIComponent(message.id)}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    dispatch(
+      deleteMessage({
+        id: deleted.id,
+        deletedAt: deleted.deletedAt ?? new Date().toISOString(),
+      }),
+    );
+  }
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = draft.trim();
@@ -778,13 +845,21 @@ export default function Home() {
     setError("");
     setSending(true);
     const clientMessageId = crypto.randomUUID();
-
     try {
+      const conversation = conversations.find((item) => item.id === selectedId);
+
+      if (!conversation || !user) {
+        throw new Error("CONVERSATION_NOT_FOUND");
+      }
+
       const data = await api<{ message: Message }>(
         `/api/v1/conversations/${selectedId}/messages`,
         {
           method: "POST",
-          body: JSON.stringify({ clientMessageId, content }),
+          body: JSON.stringify({
+            clientMessageId,
+            content,
+          }),
         },
       );
       dispatch(addMessage(data.message));
@@ -870,6 +945,78 @@ export default function Home() {
       setDragOverConversationId(null);
     }
   };
+
+  function openProfileEditor() {
+    if (!user) return;
+
+    setProfileName(user.displayName);
+    setProfileUsername(user.username);
+    setProfileError("");
+    setAvatarPreview(null);
+    setShowProfileEditor(true);
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (profileSaving) return;
+
+    setProfileSaving(true);
+    setProfileError("");
+
+    try {
+      const result = await api<{ user: User }>("/api/v1/users/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          displayName: profileName,
+          username: profileUsername,
+        }),
+      });
+
+      setUser(result.user);
+      setShowProfileEditor(false);
+    } catch (error) {
+      setProfileError(`Avatar upload failed: ${errorText(error)}`);
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!user) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setProfileError("Choose a JPG, PNG or WebP image.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError("Avatar must be 5 MB or smaller.");
+      return;
+    }
+
+    setAvatarUploading(true);
+    setProfileError("");
+
+    try {
+      const form = new FormData();
+      form.append("file", file);
+
+      // Do not set Content-Type manually; fetch adds the multipart boundary.
+      const result = await api<{ user: User }>("/api/v1/conversations/avatar", {
+        method: "POST",
+        body: form,
+      });
+
+      setUser(result.user);
+      console.log("Avatar URL returned by API:", result.user.avatarUrl);
+      setAvatarPreview(null);
+    } catch (error) {
+      setProfileError(`Profile save failed: ${errorText(error)}`);
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
 
   if (authLoading) {
     return (
@@ -1060,8 +1207,10 @@ export default function Home() {
           <span className="brand-dot" />
         </div>
 
-        <div className="sidebar-heading"></div>
-
+        <Link href="/calls" className="sidebar-calls-link">
+          <span aria-hidden="true">◷</span>
+          Call history
+        </Link>
         <div className="new-chat-panel">
           <div className="user-search-box">
             <span aria-hidden="true">⌕</span>
@@ -1160,8 +1309,29 @@ export default function Home() {
                 }}
               >
                 <div className="avatar">
-                  {initials(peer?.displayName ?? conversation.title ?? "Group")}
+                  <UserAvatar
+                    name={
+                      peer?.displayName ??
+                      peer?.username ??
+                      conversation.title ??
+                      "User"
+                    }
+                    avatarUrl={peer?.avatarUrl}
+                  />
+
+                  <span className="avatar-fallback">
+                    <UserAvatar
+                      name={
+                        peer?.displayName ??
+                        peer?.username ??
+                        conversation.title ??
+                        "User"
+                      }
+                      avatarUrl={peer?.avatarUrl}
+                    />
+                  </span>
                 </div>
+
                 <div className="conversation-summary">
                   <div className="conversation-title">
                     <span>
@@ -1195,13 +1365,27 @@ export default function Home() {
         </div>
 
         <div className="sidebar-profile">
-          <div className="avatar profile-avatar">
-            {initials(user.displayName || user.username)}
-          </div>
+          <button
+            type="button"
+            className="avatar profile-avatar"
+            onClick={openProfileEditor}
+            aria-label="Edit profile"
+            title="Edit profile"
+          >
+            {user.avatarUrl ? (
+              <img src={user.avatarUrl} alt="" />
+            ) : (
+              initials(user.displayName || user.username)
+            )}
+          </button>
           <div className="profile-copy">
             <strong>{user.displayName}</strong>
             <span>@{user.username}</span>
+            <button type="button" onClick={openProfileEditor}>
+              Edit profile
+            </button>
           </div>
+
           <button
             type="button"
             className="logout-button"
@@ -1212,7 +1396,86 @@ export default function Home() {
           </button>
         </div>
       </aside>
+      {showProfileEditor && (
+        <div className="profile-editor-overlay">
+          <form className="profile-editor" onSubmit={saveProfile}>
+            <h2>Edit profile</h2>
 
+            <div className="profile-editor-avatar">
+              {avatarPreview || user?.avatarUrl ? (
+                <img
+                  src={avatarPreview ?? user?.avatarUrl ?? ""}
+                  alt="Profile preview"
+                />
+              ) : (
+                <span>{initials(user?.displayName ?? "")}</span>
+              )}
+            </div>
+
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                setAvatarPreview(URL.createObjectURL(file));
+                void uploadAvatar(file);
+                event.target.value = "";
+              }}
+            />
+
+            <button
+              type="button"
+              disabled={avatarUploading}
+              onClick={() => avatarInputRef.current?.click()}
+            >
+              {avatarUploading ? "Uploading…" : "Change photo"}
+            </button>
+
+            <label htmlFor="profile-display-name">Display name</label>
+            <input
+              id="profile-display-name"
+              value={profileName}
+              onChange={(event) => setProfileName(event.target.value)}
+              maxLength={80}
+              required
+            />
+
+            <label htmlFor="profile-username">Username</label>
+            <input
+              id="profile-username"
+              value={profileUsername}
+              onChange={(event) => setProfileUsername(event.target.value)}
+              minLength={3}
+              maxLength={30}
+              pattern="[A-Za-z0-9_]+"
+              required
+            />
+
+            {profileError && <p role="alert">{profileError}</p>}
+
+            <div className="profile-editor-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProfileEditor(false);
+                  setAvatarPreview(null);
+                  setProfileError("");
+                }}
+              >
+                Cancel
+              </button>
+
+              <button type="submit" disabled={profileSaving}>
+                {profileSaving ? "Saving…" : "Save profile"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       <section className="chat-panel">
         {selectedConversation ? (
           <>
@@ -1225,13 +1488,17 @@ export default function Home() {
               >
                 ←
               </button>
-              <div className="avatar">
-                {initials(
+
+              <UserAvatar
+                name={
                   peerFor(selectedConversation, user.id)?.displayName ??
-                    selectedConversation.title ??
-                    "Group",
-                )}
-              </div>
+                  peerFor(selectedConversation, user.id)?.username ??
+                  selectedConversation?.title ??
+                  "User"
+                }
+                avatarUrl={peerFor(selectedConversation, user.id)?.avatarUrl}
+              />
+
               <div className="chat-heading-copy">
                 <h2>
                   {selectedConversation.title ??
@@ -1251,7 +1518,24 @@ export default function Home() {
                   </p>
                 )}
               </div>
-              <div className="header-pill">Private conversation</div>
+
+              <div className="chat-header-actions">
+                <div className="header-pill">Private conversation</div>
+
+                <CallControls
+                  socket={socketRef.current}
+                  conversationId={selectedId || null}
+                  userId={user.id}
+                  peerName={
+                    peerFor(selectedConversation, user.id)?.displayName ??
+                    selectedConversation.title ??
+                    "Chat user"
+                  }
+                  peerAvatarUrl={
+                    peerFor(selectedConversation, user.id)?.avatarUrl ?? null
+                  }
+                />
+              </div>
             </header>
 
             <div className="messages-area" ref={messagesAreaRef}>
@@ -1328,6 +1612,8 @@ export default function Home() {
                   event.dataTransfer.effectAllowed = "copy";
                   event.dataTransfer.setData("text/plain", message.id);
                 }}
+                onEdit={editMessage}
+                onDelete={deleteChatMessage}
               />
               {forwardMessage && (
                 <div
