@@ -3245,3 +3245,6 @@ input:focus-visible {
   justify-content: center;
   flex-shrink: 0;
 }
+.call-panel > audio {
+  display: none;
+}

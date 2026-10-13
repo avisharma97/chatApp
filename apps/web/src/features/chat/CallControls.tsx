@@ -463,6 +463,12 @@ export default function CallControls({
           aria-label={incoming ? "Incoming call" : "Call in progress"}
         >
           <section className="call-panel">
+            <audio
+              ref={remoteAudioRef}
+              autoPlay
+              playsInline
+              aria-label="Remote participant audio"
+            />
             <header className="call-topbar">
               <span className="call-security-label">
                 <span aria-hidden="true">●</span> Private call
