@@ -29,13 +29,10 @@ function formatDuration(seconds: number) {
 
 export default function CallsPage() {
   const [calls, setCalls] = useState<CallItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const loadCalls = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError("");
-
     try {
       const response = await fetch(`${API}/api/v1/calls?limit=50`, {
         credentials: "include",
@@ -51,18 +48,33 @@ export default function CallsPage() {
       }
 
       const data: { calls: CallItem[] } = await response.json();
-      setCalls(data.calls);
+
+      if (!signal?.aborted) {
+        setCalls(data.calls);
+        setError("");
+      }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "Request failed.");
+
+      if (!signal?.aborted) {
+        setError(err instanceof Error ? err.message : "Request failed.");
+      }
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadCalls(controller.signal);
+
+    const run = async () => {
+      await loadCalls(controller.signal);
+    };
+
+    void run();
+
     return () => controller.abort();
   }, [loadCalls]);
 

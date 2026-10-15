@@ -3,6 +3,7 @@ import type { Server as HttpServer } from "node:http";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { registerCallHandlers } from "./calls.js";
+import { getAllowedOrigins } from "./origins.js";
 const require = createRequire(import.meta.url);
 const cookie = require("cookie") as typeof import("cookie");
 import { z } from "zod";
@@ -36,13 +37,10 @@ function getCookieValue(
 const onlineUsers = new Map<string, Set<string>>();
 const COOKIE_NAME = "chatapp_session";
 
-const allowedOrigins = (process.env.WEB_ORIGIN ?? "http://localhost:3000")
-  .split(",")
-  .map((origin) => new URL(origin.trim()).origin);
-
 let io: Server | undefined;
 
 export function initializeSocket(httpServer: HttpServer) {
+  const allowedOrigins = getAllowedOrigins();
   io = new Server(httpServer, {
     cors: {
       origin: allowedOrigins,
@@ -74,6 +72,7 @@ export function initializeSocket(httpServer: HttpServer) {
       const session = await prisma.session.findUnique({
         where: { tokenHash },
         select: {
+          id: true,
           userId: true,
           expiresAt: true,
           revokedAt: true,
@@ -93,6 +92,7 @@ export function initializeSocket(httpServer: HttpServer) {
       }
 
       socket.data.userId = session.userId;
+      socket.data.sessionId = session.id;
       return next();
     } catch {
       return next(new Error("AUTHENTICATION_FAILED"));
@@ -101,8 +101,48 @@ export function initializeSocket(httpServer: HttpServer) {
 
   io.on("connection", (socket) => {
     const userId = socket.data.userId as string;
-    // Server-controlled room: clients cannot choose another user's ID.
+    const sessionId = socket.data.sessionId as string;
+
+    // Handshake authentication alone is not enough: the session can be
+    // revoked or expire while this socket remains connected. Validate each
+    // client packet before its event handler is allowed to run.
+    socket.use((_packet, next) => {
+      void (async () => {
+        try {
+          const session = await prisma.session.findUnique({
+            where: { id: sessionId },
+            select: {
+              userId: true,
+              expiresAt: true,
+              revokedAt: true,
+              user: { select: { isActive: true } },
+            },
+          });
+
+          if (
+            !session ||
+            session.userId !== userId ||
+            session.revokedAt ||
+            session.expiresAt <= new Date() ||
+            !session.user.isActive
+          ) {
+            socket.disconnect(true);
+            next(new Error("UNAUTHENTICATED"));
+            return;
+          }
+
+          next();
+        } catch {
+          // Fail closed when the session store cannot be checked.
+          socket.disconnect(true);
+          next(new Error("AUTHENTICATION_UNAVAILABLE"));
+        }
+      })();
+    });
+
+    // Server-controlled rooms; clients cannot choose these identities.
     void socket.join(`user:${userId}`);
+    void socket.join(`session:${sessionId}`);
 
     registerCallHandlers(io!, socket);
     const wasOffline = !onlineUsers.has(userId);
@@ -420,4 +460,16 @@ export function getIO() {
   }
 
   return io;
+}
+
+export function disconnectSessionSockets(sessionId: string): void {
+  if (!io) return;
+
+  io.in(`session:${sessionId}`).disconnectSockets(true);
+}
+
+export function disconnectUserSockets(userId: string): void {
+  if (!io) return;
+
+  io.in(`user:${userId}`).disconnectSockets(true);
 }

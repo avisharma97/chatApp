@@ -7,6 +7,10 @@ import { prisma } from "../lib/prisma.js";
 import { authRateLimit } from "../middleware/auth-rate-limit.js";
 import { OAuth2Client } from "google-auth-library";
 import { timingSafeEqual } from "node:crypto";
+import {
+  disconnectSessionSockets,
+  disconnectUserSockets,
+} from "../lib/socket.js";
 
 export const authRouter = Router();
 
@@ -370,7 +374,7 @@ authRouter.post("/reset-password", authRateLimit, async (req, res) => {
         data: { usedAt: now },
       });
 
-      return true;
+      return { userId: resetToken.userId };
     });
 
     if (!result) {
@@ -378,6 +382,8 @@ authRouter.post("/reset-password", authRateLimit, async (req, res) => {
         error: "INVALID_OR_EXPIRED_RESET_TOKEN",
       });
     }
+
+    disconnectUserSockets(result.userId);
 
     return res.status(200).json({
       message: "Password reset successful. Please log in again.",
@@ -664,13 +670,24 @@ authRouter.post("/logout", async (req, res) => {
 
   try {
     if (token) {
+      const tokenHash = hashToken(token);
+
+      const session = await prisma.session.findUnique({
+        where: { tokenHash },
+        select: { id: true },
+      });
+
       await prisma.session.updateMany({
         where: {
-          tokenHash: hashToken(token),
+          tokenHash,
           revokedAt: null,
         },
         data: { revokedAt: new Date() },
       });
+
+      if (session) {
+        disconnectSessionSockets(session.id);
+      }
     }
 
     res.clearCookie(COOKIE_NAME, {

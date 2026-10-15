@@ -49,7 +49,8 @@ export default function CallControls({
   const [status, setStatus] = useState("");
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
-
+  const [hasAudioTrack, setHasAudioTrack] = useState(false);
+  const [hasVideoTrack, setHasVideoTrack] = useState(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -109,6 +110,12 @@ export default function CallControls({
     });
 
     localStreamRef.current = stream;
+    setHasVideoTrack(
+      stream.getVideoTracks().some((track) => track.readyState === "live"),
+    );
+    setHasAudioTrack(
+      stream.getAudioTracks().some((track) => track.readyState === "live"),
+    );
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
     const micSource = audioContext.createMediaStreamSource(stream);
@@ -641,7 +648,7 @@ export default function CallControls({
                   type="button"
                   className={`call-action-button secondary-call-button ${muted ? "control-active" : ""}`}
                   onClick={toggleMicrophone}
-                  disabled={!localStreamRef.current}
+                  disabled={!hasVideoTrack}
                   aria-label={muted ? "Unmute microphone" : "Mute microphone"}
                 >
                   <span aria-hidden="true">{muted ? "🔇" : "🎙"}</span>
@@ -653,7 +660,7 @@ export default function CallControls({
                     type="button"
                     className={`call-action-button secondary-call-button ${cameraOff ? "control-active" : ""}`}
                     onClick={toggleCamera}
-                    disabled={!localStreamRef.current?.getVideoTracks().length}
+                    disabled={!hasVideoTrack}
                     aria-label={
                       cameraOff ? "Turn camera on" : "Turn camera off"
                     }

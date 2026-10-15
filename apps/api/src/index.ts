@@ -21,6 +21,7 @@ import { z } from "zod";
 import cors from "cors";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { conversationsRouter } from "./routes/conversations.routes.js";
+import { getAllowedOrigins } from "./lib/origins.js";
 
 const require = createRequire(import.meta.url);
 const pinoHttp = require("pino-http") as typeof import("pino-http").default;
@@ -58,7 +59,7 @@ app.disable("x-powered-by");
 // Credentials are required for HttpOnly cookie authentication.
 app.use(
   cors({
-    origin: process.env.WEB_ORIGIN ?? "http://localhost:3000",
+    origin: getAllowedOrigins(),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "X-Request-ID"],

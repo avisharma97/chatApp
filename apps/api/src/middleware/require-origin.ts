@@ -1,18 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
+import { getAllowedOrigins } from "../lib/origins.js";
 declare global {
   namespace Express {
     interface Request {
       userId?: string;
     }
   }
-}
-
-function getAllowedOrigins(): string[] {
-  return (process.env.WEB_ORIGIN ?? "http://localhost:3000")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean)
-    .map((origin) => new URL(origin).origin);
 }
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);

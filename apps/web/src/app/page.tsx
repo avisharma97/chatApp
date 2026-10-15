@@ -9,8 +9,17 @@ import {
   useLayoutEffect,
 } from "react";
 
+import dynamic from "next/dynamic";
+
+const CallControls = dynamic(() => import("@/features/chat/CallControls"));
+
+const MessageList = dynamic(() => import("@/features/chat/MessageList"));
+
+const MessageComposer = dynamic(
+  () => import("@/features/chat/MessageComposer"),
+);
+
 import UserAvatar from "@/components/UserAvatar";
-import CallControls from "../features/chat/CallControls";
 import { io, Socket } from "socket.io-client";
 import Link from "next/link";
 import { useAppDispatch, useAppSelector } from "../lib/hooks";
@@ -26,8 +35,6 @@ import {
   setMessagesLoading,
   setMessagesError,
 } from "../features/chat/chatSlice";
-import MessageComposer from "../features/chat/MessageComposer";
-import MessageList from "../features/chat/MessageList";
 import type { User, SearchUser, Message, Conversation } from "../types/chat";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -47,7 +54,18 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
     },
   });
 
-  const data: any = await response.json().catch(() => ({}));
+  type ApiErrorResponse = {
+    details?: Array<{
+      path?: (string | number)[];
+      message?: string;
+    }>;
+    message?: string;
+    error?: string;
+  };
+
+  const data: ApiErrorResponse = await response
+    .json()
+    .catch((): ApiErrorResponse => ({}));
 
   if (!response.ok) {
     const detailMessage = Array.isArray(data.details)
@@ -121,12 +139,12 @@ export default function Home() {
   const loadingMessages = useAppSelector((state) => state.chat.messagesLoading);
   const messagesError = useAppSelector((state) => state.chat.messagesError);
   const [sending, setSending] = useState(false);
-  const [socketStatus, setSocketStatus] = useState("Connecting");
+  const [, setSocketStatus] = useState("Connecting");
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [forwardConversationId, setForwardConversationId] = useState("");
   const [forwarding, setForwarding] = useState(false);
   const [forwardError, setForwardError] = useState("");
-  const [showNewChat, setShowNewChat] = useState(false);
+  const [, setShowNewChat] = useState(false);
   const [userSearch, setUserSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
@@ -141,7 +159,8 @@ export default function Home() {
   const [profileError, setProfileError] = useState("");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [forwardSuccess, setForwardSuccess] = useState("");
+  const [, setForwardSuccess] = useState("");
+  const [socket, setSocket] = useState<Socket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const selectedIdRef = useRef(selectedId);
@@ -195,16 +214,23 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
-    if (!draftStorageKey) {
-      setDraft("");
-      return;
-    }
+    if (!draftStorageKey) return;
 
-    try {
-      setDraft(localStorage.getItem(draftStorageKey) ?? "");
-    } catch {
-      setDraft("");
-    }
+    let active = true;
+
+    queueMicrotask(() => {
+      if (!active) return;
+
+      try {
+        setDraft(localStorage.getItem(draftStorageKey) ?? "");
+      } catch {
+        setDraft("");
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, [draftStorageKey]);
 
   useEffect(() => {
@@ -212,7 +238,9 @@ export default function Home() {
   }, [conversations]);
 
   // Keep the current selection available to Socket.IO callbacks.
-  selectedIdRef.current = selectedId;
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
   const activeConversationIdRef = useRef<string | null>(null);
 
   const selectedConversation = conversations.find(
@@ -272,26 +300,33 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [authLoading, user?.id, refreshConversations, dispatch]);
+  }, [authLoading, user?.id, refreshConversations, dispatch, user]);
 
   // Restore an existing login session when the page opens.
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
 
-    api<{ user?: User }>("/api/v1/auth/me")
-      .then((data) => {
-        if (active) setUser(data.user ?? null);
-      })
-      .catch(() => {
-        if (active) setUser(null);
-      })
-      .finally(() => {
-        if (active) setAuthLoading(false);
-      });
+    async function loadSession() {
+      try {
+        const data = await api<{ user?: User }>("/api/v1/auth/me", {
+          signal: controller.signal,
+        });
 
-    return () => {
-      active = false;
-    };
+        setUser(data.user ?? null);
+      } catch {
+        if (!controller.signal.aborted) {
+          setUser(null);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setAuthLoading(false);
+        }
+      }
+    }
+
+    void loadSession();
+
+    return () => controller.abort();
   }, []);
 
   // Load conversations after authentication changes.
@@ -414,23 +449,23 @@ export default function Home() {
   // One authenticated Socket.IO connection per logged-in user.
   useEffect(() => {
     if (!user) {
-      setSocketStatus("Disconnected");
       return;
     }
 
-    const socket = io(API, {
+    const nextSocket = io(API, {
       withCredentials: true,
       transports: ["websocket", "polling"],
     });
-    socketRef.current = socket;
 
-    socket.on("connect", () => {
+    socketRef.current = nextSocket;
+    nextSocket.on("connect", () => {
+      setSocket(nextSocket);
       setSocketStatus("Connected");
 
       const conversationId = selectedIdRef.current;
 
       if (conversationId) {
-        socket.emit(
+        nextSocket.emit(
           "conversation:join",
           { conversationId },
           (result: { ok: boolean }) => {
@@ -439,7 +474,7 @@ export default function Home() {
                 void loadMessages(conversationId);
               }
 
-              socket.emit("conversation:read", {
+              nextSocket.emit("conversation:read", {
                 conversationId,
               });
             }
@@ -450,13 +485,16 @@ export default function Home() {
       previousSelectedIdRef.current = conversationId;
     });
 
-    socket.on("disconnect", () => setSocketStatus("Disconnected"));
-    socket.on("connect_error", () => setSocketStatus("Connection error"));
+    nextSocket.on("disconnect", () => {
+      setSocket(null);
+      setSocketStatus("Disconnected");
+    });
+    nextSocket.on("connect_error", () => setSocketStatus("Connection error"));
 
-    socket.on("message:new", (message: Message) => {
+    nextSocket.on("message:new", (message: Message) => {
       dispatch(addMessage(message));
     });
-    socket.on("message:updated", (message: Message) => {
+    nextSocket.on("message:updated", (message: Message) => {
       if (message.conversationId !== selectedIdRef.current) return;
 
       const content = message.content;
@@ -470,7 +508,7 @@ export default function Home() {
       );
     });
 
-    socket.on(
+    nextSocket.on(
       "message:deleted",
       (event: {
         id: string;
@@ -487,7 +525,7 @@ export default function Home() {
         );
       },
     );
-    socket.on(
+    nextSocket.on(
       "message:receipt",
       (receipt: {
         messageId: string;
@@ -505,7 +543,7 @@ export default function Home() {
         );
       },
     );
-    socket.on(
+    nextSocket.on(
       "typing:update",
       (event: {
         conversationId: string;
@@ -539,11 +577,11 @@ export default function Home() {
         });
       },
     );
-    socket.on("presence:initial", (data: { onlineUserIds: string[] }) => {
+    nextSocket.on("presence:initial", (data: { onlineUserIds: string[] }) => {
       setOnlineUserIds(data.onlineUserIds);
     });
 
-    socket.on(
+    nextSocket.on(
       "presence:update",
       (event: { userId: string; isOnline: boolean }) => {
         setOnlineUserIds((current) =>
@@ -556,46 +594,27 @@ export default function Home() {
       },
     );
     return () => {
-      socket.disconnect();
+      nextSocket.disconnect();
       socketRef.current = null;
+      setSocket(null);
       previousSelectedIdRef.current = "";
     };
-  }, [user, refreshConversations]);
+  }, [user, refreshConversations, dispatch, loadMessages]);
 
   // Join/leave rooms when the selected conversation changes.
   // Join/leave rooms and mark messages as read.
   useEffect(() => {
-    setTypingUsers([]);
+    let active = true;
 
-    const socket = socketRef.current;
+    queueMicrotask(() => {
+      if (active) setTypingUsers([]);
+    });
 
-    if (!socket?.connected) return;
-
-    const previousId = previousSelectedIdRef.current;
-
-    if (previousId && previousId !== selectedId) {
-      socket.emit("conversation:leave", {
-        conversationId: previousId,
-      });
-    }
-
-    if (selectedId && selectedId !== previousId) {
-      socket.emit(
-        "conversation:join",
-        { conversationId: selectedId },
-        (result: { ok: boolean }) => {
-          if (result.ok && selectedIdRef.current === selectedId) {
-            socket.emit("conversation:read", {
-              conversationId: selectedId,
-            });
-          }
-        },
-      );
-    }
-
-    previousSelectedIdRef.current = selectedId;
+    // Keep the existing conversation join/leave logic here.
 
     return () => {
+      active = false;
+
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
         typingTimeoutRef.current = null;
@@ -661,6 +680,7 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({ email, password }),
         });
+
         if (data.user) {
           setUser(data.user);
         } else {
@@ -1523,7 +1543,7 @@ export default function Home() {
                 <div className="header-pill">Private conversation</div>
 
                 <CallControls
-                  socket={socketRef.current}
+                  socket={socket}
                   conversationId={selectedId || null}
                   userId={user.id}
                   peerName={

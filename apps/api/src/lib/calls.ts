@@ -26,6 +26,7 @@ const activeCallByUser = new Map<string, string>();
 // Initial per-process limit. Replace with a shared limiter
 // before running multiple API instances.
 const attempts = new Map<string, number[]>();
+let attemptCleanupCounter = 0;
 
 const RING_TIMEOUT_MS = 30_000;
 const MAX_SIGNAL_BYTES = 24_000;
@@ -99,6 +100,19 @@ function otherParticipant(call: CallSession, userId: string) {
 
 function consumeStartLimit(userId: string) {
   const now = Date.now();
+
+  // Bound stale per-user entries without scanning the entire map on every
+  // call attempt. This is a local limiter; use Redis before adding instances.
+  attemptCleanupCounter += 1;
+  if (attemptCleanupCounter >= 100) {
+    attemptCleanupCounter = 0;
+    for (const [id, timestamps] of attempts) {
+      if (timestamps.every((time) => now - time >= 60_000)) {
+        attempts.delete(id);
+      }
+    }
+  }
+
   const recent = (attempts.get(userId) ?? []).filter(
     (time) => now - time < 60_000,
   );
@@ -216,16 +230,35 @@ export function registerCallHandlers(io: Server, socket: Socket) {
       }
 
       const callId = randomUUID();
-      await prisma.callHistory.create({
-        data: {
-          id: callId,
-          conversationId,
-          callerId: userId,
-          calleeId,
-          type,
-          status: "RINGING",
-        },
-      });
+
+      // Reserve both users synchronously before awaiting the database.
+      // Concurrent call:start events will now observe the reservation.
+      activeCallByUser.set(userId, callId);
+      activeCallByUser.set(calleeId, callId);
+
+      try {
+        await prisma.callHistory.create({
+          data: {
+            id: callId,
+            conversationId,
+            callerId: userId,
+            calleeId,
+            type,
+            status: "RINGING",
+          },
+        });
+      } catch {
+        // Release only this request's reservation.
+        if (activeCallByUser.get(userId) === callId) {
+          activeCallByUser.delete(userId);
+        }
+
+        if (activeCallByUser.get(calleeId) === callId) {
+          activeCallByUser.delete(calleeId);
+        }
+
+        return ackError(ack, "INTERNAL_SERVER_ERROR");
+      }
       const timer = setTimeout(() => {
         const current = calls.get(callId);
         if (current?.status === "ringing") {
@@ -246,8 +279,6 @@ export function registerCallHandlers(io: Server, socket: Socket) {
       };
 
       calls.set(callId, call);
-      activeCallByUser.set(userId, callId);
-      activeCallByUser.set(calleeId, callId);
 
       io.to(`user:${calleeId}`).emit("call:incoming", {
         callId,
@@ -381,7 +412,9 @@ export function registerCallHandlers(io: Server, socket: Socket) {
     // active socket connection (e.g. another tab).
     const remainingSockets = io.sockets.adapter.rooms.get(`user:${userId}`);
 
-    if (remainingSockets && remainingSockets.size > 1) return;
+    // The disconnecting socket has already left its rooms.
+    // Keep the call alive if another socket for this user remains.
+    if (remainingSockets && remainingSockets.size > 0) return;
 
     finishCall(io, call, "unavailable");
   });
