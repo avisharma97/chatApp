@@ -60,7 +60,7 @@ export default function CallControls({
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const mountedRef = useRef(true);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-
+  const remoteAudioStreamRef = useRef<MediaStream | null>(null);
   const setCurrentCall = useCallback((next: CallInfo | null) => {
     callRef.current = next;
     if (mountedRef.current) setCall(next);
@@ -181,27 +181,55 @@ export default function CallControls({
       }
 
       pc.ontrack = (event) => {
-        const stream = remoteStreamRef.current;
-        if (!stream) return;
-
-        // Add only the track received from the remote peer.
         const track = event.track;
 
-        if (!stream.getTracks().some((item) => item.id === track.id)) {
-          stream.addTrack(track);
+        console.log("[WebRTC remote track]", {
+          kind: track.kind,
+          readyState: track.readyState,
+          muted: track.muted,
+        });
+
+        if (track.kind === "video") {
+          const remoteStream = remoteStreamRef.current;
+          if (!remoteStream) return;
+
+          if (!remoteStream.getVideoTracks().some((t) => t.id === track.id)) {
+            remoteStream.addTrack(track);
+          }
+
+          const video = remoteVideoRef.current;
+          if (video) {
+            video.srcObject = remoteStream;
+            video.muted = true;
+            void video.play().catch(console.error);
+          }
+
+          return;
         }
 
-        // Keep remote video attached to the remote stream.
-        if (remoteVideoRef.current && track.kind === "video") {
-          remoteVideoRef.current.srcObject = stream;
-          void remoteVideoRef.current.play().catch(() => {});
-        }
+        if (track.kind === "audio") {
+          const audioStream = new MediaStream([track]);
+          remoteAudioStreamRef.current = audioStream;
 
-        // Play the remote microphone audio.
-        if (remoteAudioRef.current && track.kind === "audio") {
-          remoteAudioRef.current.srcObject = stream;
-          void remoteAudioRef.current.play().catch(() => {
-            setStatus("Tap the page to enable remote audio.");
+          const audio = remoteAudioRef.current;
+          if (!audio) {
+            console.error("[Remote audio] Audio element not mounted");
+            return;
+          }
+
+          audio.srcObject = audioStream;
+          audio.muted = false;
+          audio.volume = 1;
+
+          track.onunmute = () => {
+            console.log("[Remote audio] Track unmuted");
+            void audio.play().catch((error) => {
+              console.error("[Remote audio] Playback failed", error);
+            });
+          };
+
+          void audio.play().catch((error) => {
+            console.error("[Remote audio] Playback failed", error);
           });
         }
       };
@@ -244,7 +272,7 @@ export default function CallControls({
         }
       };
 
-      return (window.clearInterval(timer), pc);
+      return pc;
     },
     [socket],
   );
