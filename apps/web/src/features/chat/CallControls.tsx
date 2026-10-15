@@ -71,8 +71,15 @@ export default function CallControls({
 
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.muted = true;
+      void localVideoRef.current.play().catch(() => {});
     }
-  }, [call]);
+
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      void remoteVideoRef.current.play().catch(() => {});
+    }
+  }, [call, status]);
 
   const cleanup = useCallback(() => {
     pcRef.current?.close();
@@ -134,8 +141,6 @@ export default function CallControls({
       console.log("[Call] Microphone signal peak:", peak);
     };
 
-    setInterval(checkMic, 2000);
-
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
       localVideoRef.current.muted = true;
@@ -179,13 +184,21 @@ export default function CallControls({
         const stream = remoteStreamRef.current;
         if (!stream) return;
 
-        for (const track of event.streams[0]?.getTracks() ?? [event.track]) {
-          if (!stream.getTracks().some((item) => item.id === track.id)) {
-            stream.addTrack(track);
-          }
+        // Add only the track received from the remote peer.
+        const track = event.track;
+
+        if (!stream.getTracks().some((item) => item.id === track.id)) {
+          stream.addTrack(track);
         }
 
-        if (remoteAudioRef.current) {
+        // Keep remote video attached to the remote stream.
+        if (remoteVideoRef.current && track.kind === "video") {
+          remoteVideoRef.current.srcObject = stream;
+          void remoteVideoRef.current.play().catch(() => {});
+        }
+
+        // Play the remote microphone audio.
+        if (remoteAudioRef.current && track.kind === "audio") {
           remoteAudioRef.current.srcObject = stream;
           void remoteAudioRef.current.play().catch(() => {
             setStatus("Tap the page to enable remote audio.");
@@ -648,7 +661,7 @@ export default function CallControls({
                   type="button"
                   className={`call-action-button secondary-call-button ${muted ? "control-active" : ""}`}
                   onClick={toggleMicrophone}
-                  disabled={!hasVideoTrack}
+                  disabled={!hasAudioTrack}
                   aria-label={muted ? "Unmute microphone" : "Mute microphone"}
                 >
                   <span aria-hidden="true">{muted ? "🔇" : "🎙"}</span>
