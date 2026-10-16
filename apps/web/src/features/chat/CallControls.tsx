@@ -86,6 +86,11 @@ export default function CallControls({
   }, [call, status]);
 
   const cleanup = useCallback(() => {
+    if (statsTimerRef.current !== null) {
+      window.clearInterval(statsTimerRef.current);
+      statsTimerRef.current = null;
+    }
+
     pcRef.current?.close();
     pcRef.current = null;
 
@@ -152,14 +157,23 @@ export default function CallControls({
 
       console.log("[Call] Microphone signal peak:", peak);
     };
-    const micInterval = window.setInterval(checkMic, 2000);
-    checkMic();
 
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
       localVideoRef.current.muted = true;
     }
-    window.clearInterval(micInterval);
+
+    // Temporary mic diagnostic: check every 2 seconds.
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.muted = true;
+    }
+
+    // Temporary mic diagnostic: check every 2 seconds.
+    const micInterval = window.setInterval(checkMic, 2000);
+    checkMic();
+
     return stream;
   }, []);
 
@@ -289,10 +303,7 @@ export default function CallControls({
           setStatus("Connected");
         }
       };
-      if (statsTimerRef.current !== null) {
-        window.clearInterval(statsTimerRef.current);
-        statsTimerRef.current = null;
-      }
+
       return pc;
     },
 
@@ -470,8 +481,23 @@ export default function CallControls({
 
         if (!pc) return;
 
+        if (event.kind === "ice") {
+          const candidate = event.payload as RTCIceCandidateInit;
+
+          if (!pc || !pc.remoteDescription) {
+            pendingIceRef.current.push(candidate);
+            return;
+          }
+
+          await pc.addIceCandidate(candidate);
+          return;
+        }
+
+        if (!pc) return;
+
         if (event.kind === "answer") {
           if (current.callerId !== userId) return;
+
           await pc.setRemoteDescription(
             event.payload as RTCSessionDescriptionInit,
           );
@@ -479,16 +505,9 @@ export default function CallControls({
           for (const candidate of pendingIceRef.current) {
             await pc.addIceCandidate(candidate);
           }
+
           pendingIceRef.current = [];
           return;
-        }
-
-        const candidate = event.payload as RTCIceCandidateInit;
-
-        if (!pc.remoteDescription) {
-          pendingIceRef.current.push(candidate);
-        } else {
-          await pc.addIceCandidate(candidate);
         }
       } catch {
         setStatus("A signaling error occurred. End the call and retry.");
@@ -547,50 +566,80 @@ export default function CallControls({
 
   async function switchCamera() {
     const localStream = localStreamRef.current;
+
     if (!localStream || switchingCamera) return;
 
     const oldTrack = localStream.getVideoTracks()[0];
-    if (!oldTrack || oldTrack.readyState !== "live") return;
+
+    if (!oldTrack || oldTrack.readyState !== "live") {
+      setStatus("Current camera is not available.");
+      return;
+    }
 
     setSwitchingCamera(true);
 
     const nextFacing = facingMode === "user" ? "environment" : "user";
 
-    let newTrack: MediaStreamTrack | undefined;
+    let newStream: MediaStream | null = null;
+    let newTrack: MediaStreamTrack | null = null;
 
     try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
+      // Request the exact camera direction.
+      newStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: nextFacing } },
+        video: { facingMode: { exact: nextFacing } },
       });
 
       newTrack = newStream.getVideoTracks()[0];
-      if (!newTrack) throw new Error("Camera unavailable");
 
-      const sender = pcRef.current
+      if (!newTrack) {
+        throw new Error("Requested camera returned no video track.");
+      }
+
+      const pc = pcRef.current;
+
+      const sender = pc
         ?.getSenders()
         .find((item) => item.track?.kind === "video");
+
+      // During an active video call, replace the outgoing track too.
+      if (pc && !sender) {
+        throw new Error("Video sender not found.");
+      }
 
       if (sender) {
         await sender.replaceTrack(newTrack);
       }
 
+      // Update the local stream only after sender replacement succeeds.
       localStream.removeTrack(oldTrack);
       localStream.addTrack(newTrack);
 
-      oldTrack.stop();
-
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localStream;
-        await localVideoRef.current.play().catch(() => {});
+        await localVideoRef.current.play();
       }
+
+      oldTrack.stop();
 
       setFacingMode(nextFacing);
       setHasVideoTrack(true);
+
+      console.log("[Camera switched]", {
+        requested: nextFacing,
+        actual: newTrack.getSettings().facingMode,
+        label: newTrack.label,
+      });
     } catch (error) {
       newTrack?.stop();
-      console.error("[Call] Camera switch failed:", error);
-      setStatus("Unable to switch camera. Check camera permissions.");
+
+      console.error("[Camera switch failed]", error);
+
+      setStatus(
+        nextFacing === "environment"
+          ? "Back camera unavailable. Check device/browser camera support."
+          : "Front camera unavailable. Check device/browser camera support.",
+      );
     } finally {
       setSwitchingCamera(false);
     }
@@ -676,9 +725,9 @@ export default function CallControls({
                   <button
                     type="button"
                     className="call-action-button secondary-call-button"
+                    aria-label="Switch camera"
                     onClick={() => void switchCamera()}
                     disabled={!hasVideoTrack || switchingCamera}
-                    aria-label="Switch camera"
                   >
                     <span aria-hidden="true">🔄</span>
                     <span>
