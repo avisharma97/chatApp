@@ -51,7 +51,11 @@ export default function CallControls({
   const [cameraOff, setCameraOff] = useState(false);
   const [hasAudioTrack, setHasAudioTrack] = useState(false);
   const [hasVideoTrack, setHasVideoTrack] = useState(false);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+
+  const [switchingCamera, setSwitchingCamera] = useState(false);
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const statsTimerRef = useRef<number | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -117,6 +121,14 @@ export default function CallControls({
     });
 
     localStreamRef.current = stream;
+    console.log("[LOCAL MIC]", {
+      audioTracks: stream.getAudioTracks().map((track) => ({
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState,
+        label: track.label,
+      })),
+    });
     setHasVideoTrack(
       stream.getVideoTracks().some((track) => track.readyState === "live"),
     );
@@ -140,35 +152,41 @@ export default function CallControls({
 
       console.log("[Call] Microphone signal peak:", peak);
     };
+    const micInterval = window.setInterval(checkMic, 2000);
+    checkMic();
 
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream;
       localVideoRef.current.muted = true;
     }
-
+    window.clearInterval(micInterval);
     return stream;
   }, []);
 
   const createPeer = useCallback(
     (callId: string) => {
       const pc = new RTCPeerConnection(ICE_SERVERS);
-      const timer = window.setInterval(async () => {
+      if (statsTimerRef.current !== null) {
+        window.clearInterval(statsTimerRef.current);
+      }
+      statsTimerRef.current = window.setInterval(async () => {
+        const pc = pcRef.current;
+        if (!pc) return;
+
         const stats = await pc.getStats();
 
         stats.forEach((report) => {
           if (report.type === "inbound-rtp" && report.kind === "audio") {
-            console.log("[Audio inbound]", {
-              packetsReceived: report.packetsReceived,
-              bytesReceived: report.bytesReceived,
-              audioLevel: report.audioLevel,
+            console.log("[AUDIO IN]", {
+              packets: report.packetsReceived,
+              bytes: report.bytesReceived,
             });
           }
 
           if (report.type === "outbound-rtp" && report.kind === "audio") {
-            console.log("[Audio outbound]", {
-              packetsSent: report.packetsSent,
-              bytesSent: report.bytesSent,
-              audioLevel: report.audioLevel,
+            console.log("[AUDIO OUT]", {
+              packets: report.packetsSent,
+              bytes: report.bytesSent,
             });
           }
         });
@@ -271,9 +289,13 @@ export default function CallControls({
           setStatus("Connected");
         }
       };
-
+      if (statsTimerRef.current !== null) {
+        window.clearInterval(statsTimerRef.current);
+        statsTimerRef.current = null;
+      }
       return pc;
     },
+
     [socket],
   );
 
@@ -523,6 +545,57 @@ export default function CallControls({
     setCameraOff(nextOff);
   }
 
+  async function switchCamera() {
+    const localStream = localStreamRef.current;
+    if (!localStream || switchingCamera) return;
+
+    const oldTrack = localStream.getVideoTracks()[0];
+    if (!oldTrack || oldTrack.readyState !== "live") return;
+
+    setSwitchingCamera(true);
+
+    const nextFacing = facingMode === "user" ? "environment" : "user";
+
+    let newTrack: MediaStreamTrack | undefined;
+
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: nextFacing } },
+      });
+
+      newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) throw new Error("Camera unavailable");
+
+      const sender = pcRef.current
+        ?.getSenders()
+        .find((item) => item.track?.kind === "video");
+
+      if (sender) {
+        await sender.replaceTrack(newTrack);
+      }
+
+      localStream.removeTrack(oldTrack);
+      localStream.addTrack(newTrack);
+
+      oldTrack.stop();
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStream;
+        await localVideoRef.current.play().catch(() => {});
+      }
+
+      setFacingMode(nextFacing);
+      setHasVideoTrack(true);
+    } catch (error) {
+      newTrack?.stop();
+      console.error("[Call] Camera switch failed:", error);
+      setStatus("Unable to switch camera. Check camera permissions.");
+    } finally {
+      setSwitchingCamera(false);
+    }
+  }
+
   const incoming =
     !!call && call.callerId !== userId && status === "Incoming call";
 
@@ -599,7 +672,20 @@ export default function CallControls({
                   aria-label="Remote participant video"
                   className="call-remote-video"
                 />
-
+                {call.type === "video" && (
+                  <button
+                    type="button"
+                    className="call-action-button secondary-call-button"
+                    onClick={() => void switchCamera()}
+                    disabled={!hasVideoTrack || switchingCamera}
+                    aria-label="Switch camera"
+                  >
+                    <span aria-hidden="true">🔄</span>
+                    <span>
+                      {switchingCamera ? "Switching…" : "Switch camera"}
+                    </span>
+                  </button>
+                )}
                 <div className="call-video-placeholder">
                   <div className="call-avatar">☎</div>
                   <p>Waiting for the other camera…</p>
